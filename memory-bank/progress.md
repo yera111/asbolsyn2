@@ -256,3 +256,47 @@
 - Optimize performance based on real-world usage
 - Explore possibility of adding a rating system for meals
 - Improve analytics for tracking usage and conversions
+
+## Phase 6: Timezone Handling & Expired Meal Management
+
+### Step 6.1: Timezone-aware Datetime Handling ✅
+- **Completed on:** June 10, 2025
+- **Status:** Completed
+- **Summary:**
+  - Implemented timezone utilities for proper handling of Almaty time
+  - Added functions to convert and ensure timezone-aware datetimes
+  - Configured the Almaty timezone in the application
+  - Modified meal creation process to store timezone-aware datetimes
+  - Updated meal display to show correct local times
+  - Added formatting function for consistent datetime display
+  - Ensured pickup windows correctly handle times that cross midnight
+  - Updated all time-related features to be timezone-aware
+
+### Step 6.2: Automated Expired Meal Deactivation ✅
+- **Completed on:** June 10, 2025
+- **Status:** Completed
+- **Summary:**
+  - Implemented a background task to check for expired meals
+  - Added a scheduled task runner that periodically checks meal status
+  - Created a deactivation mechanism for meals past their pickup window
+  - Integrated the task with the main application loop
+  - Added logging for tracking expired meal deactivation
+  - Ensured the system uses Almaty timezone for all expiration checks
+  - Tested the background task for reliability
+
+### Step 6.3: Expired Meal Filtering in Search ✅
+- **Completed on:** June 10, 2025
+- **Status:** Completed
+- **Summary:**
+  - Updated meal browsing feature to exclude expired meals
+  - Modified nearby meal search to filter out expired meals
+  - Enhanced meal detail view to check for expiration before showing
+  - Implemented consistent timezone handling across all filtering operations
+  - Verified that expired meals cannot be viewed or purchased
+  - Ensured consistent user experience with proper error messages
+  - Added expiration filters to all meal-related database queries
+
+### Next Steps:
+- Monitor task performance in production
+- Consider adding notification system for meals nearing expiration
+- Add vendor analytics for meal sales and expiration patterns

@@ -10,9 +10,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from .config import BOT_TOKEN, ADMIN_CHAT_ID
+from .config import BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE
 from .db import init_db, close_db
 from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus
+from .tasks import scheduled_tasks
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,6 +22,39 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
+
+# Timezone utility functions
+def get_current_almaty_time():
+    """Get current time in Almaty timezone"""
+    return datetime.datetime.now(ALMATY_TIMEZONE)
+
+def to_almaty_time(dt):
+    """Convert any datetime to Almaty timezone"""
+    if dt.tzinfo is None:
+        # Make timezone-aware with UTC
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(ALMATY_TIMEZONE)
+
+def ensure_timezone_aware(dt):
+    """Ensure a datetime is timezone-aware, assuming Almaty timezone if naive"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=ALMATY_TIMEZONE)
+    return dt
+
+def format_pickup_time(dt):
+    """Format a datetime for display, ensuring it's in Almaty timezone"""
+    dt = ensure_timezone_aware(dt)
+    return dt.strftime("%d.%m.%Y %H:%M")
+
+async def save_order_with_timezone(order):
+    """Save an order, ensuring all datetime fields are timezone-aware"""
+    # Make all datetime fields timezone-aware
+    order.created_at = ensure_timezone_aware(order.created_at)
+    order.completed_at = ensure_timezone_aware(order.completed_at)
+    order.pickup_confirmed_at = ensure_timezone_aware(order.pickup_confirmed_at)
+    await order.save()
 
 # Russian text templates
 TEXT = {
@@ -398,8 +432,8 @@ async def process_meal_pickup_start(message: Message, state: FSMContext):
         if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
             raise ValueError("Invalid time values")
             
-        # Create datetime object for today with the specified time
-        now = datetime.datetime.now()
+        # Create datetime object for today with the specified time in Almaty timezone
+        now = get_current_almaty_time()
         pickup_start = now.replace(hour=hours, minute=minutes)
         
         # Save the pickup start time
@@ -426,8 +460,8 @@ async def process_meal_pickup_end(message: Message, state: FSMContext):
         if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
             raise ValueError("Invalid time values")
             
-        # Create datetime object for today with the specified time
-        now = datetime.datetime.now()
+        # Create datetime object for today with the specified time in Almaty timezone
+        now = get_current_almaty_time()
         pickup_end = now.replace(hour=hours, minute=minutes)
         
         # Get the pickup start time from state
@@ -495,14 +529,18 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     # Get vendor
     vendor = await Vendor.filter(telegram_id=user_id).first()
     
-    # Create meal in database
+    # Ensure pickup times are timezone-aware
+    pickup_start = ensure_timezone_aware(data.get('pickup_start'))
+    pickup_end = ensure_timezone_aware(data.get('pickup_end'))
+    
+    # Create meal in database with timezone-aware datetimes
     meal = await Meal.create(
         name=data.get('name'),
         description=data.get('description'),
         price=data.get('price'),
         quantity=data.get('quantity'),
-        pickup_start_time=data.get('pickup_start'),
-        pickup_end_time=data.get('pickup_end'),
+        pickup_start_time=pickup_start,
+        pickup_end_time=pickup_end,
         location_address=data.get('location_address'),
         location_latitude=data.get('location_latitude'),
         location_longitude=data.get('location_longitude'),
@@ -512,6 +550,10 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     # Clear the state
     await state.clear()
     
+    # Format times for display
+    pickup_start_str = format_pickup_time(pickup_start)
+    pickup_end_str = format_pickup_time(pickup_end)
+    
     # Notify the vendor about successful meal creation
     await message.answer(
         TEXT["meal_added_success"].format(
@@ -519,8 +561,8 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
             description=meal.description,
             price=meal.price,
             quantity=meal.quantity,
-            pickup_start=data.get('pickup_start_str'),
-            pickup_end=data.get('pickup_end_str'),
+            pickup_start=pickup_start_str,
+            pickup_end=pickup_end_str,
             address=meal.location_address
         ),
         reply_markup=get_main_keyboard()
@@ -611,8 +653,16 @@ async def cmd_browse_meals(message: Message):
     # Register user if not already registered
     consumer, created = await Consumer.get_or_create(telegram_id=user_id)
     
-    # Get all active meals with quantity > 0, ordered by creation date (newest first)
-    meals = await Meal.filter(is_active=True, quantity__gt=0).prefetch_related('vendor').order_by('-created_at')
+    # Get current time in Almaty timezone
+    now = get_current_almaty_time()
+    
+    # Get all active meals with quantity > 0 that haven't expired yet,
+    # ordered by creation date (newest first)
+    meals = await Meal.filter(
+        is_active=True, 
+        quantity__gt=0,
+        pickup_end_time__gt=now
+    ).prefetch_related('vendor').order_by('-created_at')
     
     if not meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
@@ -621,8 +671,8 @@ async def cmd_browse_meals(message: Message):
     # Process each meal individually with its own inline keyboard
     for meal in meals:
         # Format pickup times
-        pickup_start = meal.pickup_start_time.strftime('%H:%M')
-        pickup_end = meal.pickup_end_time.strftime('%H:%M')
+        pickup_start = to_almaty_time(meal.pickup_start_time).strftime('%H:%M')
+        pickup_end = to_almaty_time(meal.pickup_end_time).strftime('%H:%M')
         
         # Create meal listing text
         meal_text = TEXT["browse_meals_item"].format(
@@ -653,16 +703,24 @@ async def callback_view_meal(callback_query: CallbackQuery):
     # Extract meal ID from callback data
     meal_id = int(callback_query.data.split(':')[1])
     
-    # Find the meal
-    meal = await Meal.filter(id=meal_id, is_active=True, quantity__gt=0).prefetch_related('vendor').first()
+    # Get current time in Almaty timezone
+    now = get_current_almaty_time()
+    
+    # Find the meal that is active, with quantity > 0, and not expired
+    meal = await Meal.filter(
+        id=meal_id, 
+        is_active=True, 
+        quantity__gt=0,
+        pickup_end_time__gt=now
+    ).prefetch_related('vendor').first()
     
     if not meal:
         await callback_query.answer(TEXT["meal_not_found"])
         return
     
-    # Format pickup times
-    pickup_start = meal.pickup_start_time.strftime('%H:%M')
-    pickup_end = meal.pickup_end_time.strftime('%H:%M')
+    # Format pickup times using Almaty timezone
+    pickup_start = to_almaty_time(meal.pickup_start_time).strftime('%H:%M')
+    pickup_end = to_almaty_time(meal.pickup_end_time).strftime('%H:%M')
     
     # Create response with detailed meal information
     response = TEXT["meal_details_header"]
@@ -917,8 +975,15 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     # Define search radius in kilometers
     radius = 10.0
     
-    # Get all active meals with quantity > 0
-    meals = await Meal.filter(is_active=True, quantity__gt=0).prefetch_related('vendor')
+    # Get current time in Almaty timezone
+    now = get_current_almaty_time()
+    
+    # Get all active meals with quantity > 0 that haven't expired yet
+    meals = await Meal.filter(
+        is_active=True, 
+        quantity__gt=0,
+        pickup_end_time__gt=now
+    ).prefetch_related('vendor')
     
     # Filter and sort meals by distance
     nearby_meals = await filter_meals_by_distance(meals, location.latitude, location.longitude, radius)
@@ -1229,11 +1294,27 @@ async def main():
     await init_db()
     
     try:
+        # Create background task for deactivating expired meals
+        asyncio.create_task(periodic_task_runner())
+        
         # Start the bot
         await dp.start_polling(bot)
     finally:
         # Close database connection when done
         await close_db()
+
+async def periodic_task_runner():
+    """Run scheduled tasks periodically"""
+    while True:
+        try:
+            # Run task to deactivate expired meals
+            await scheduled_tasks["deactivate_expired_meals"]()
+            # Wait for 10 minutes before checking again
+            await asyncio.sleep(600)
+        except Exception as e:
+            logging.error(f"Error in periodic task runner: {e}")
+            # Wait a bit before retry in case of error
+            await asyncio.sleep(60)
 
 
 if __name__ == "__main__":

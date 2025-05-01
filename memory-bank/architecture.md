@@ -440,3 +440,44 @@ The application includes a comprehensive end-to-end testing framework to validat
    - Structured test step organization
    - Configuration file generation for repeatability
    - Environment-specific testing parameters
+
+## Timezone Handling
+
+The application uses proper timezone handling to ensure that all datetime operations are consistent and user-friendly:
+
+1. **Timezone Configuration**
+   - Configured "Asia/Almaty" timezone (UTC+6) as the base timezone for the application
+   - All timestamps are stored and processed in this timezone
+   - Ensures meal pickup times are correctly displayed and filtered
+
+2. **Timezone Utility Functions**
+   - `get_current_almaty_time()`: Returns the current time in Almaty timezone
+   - `to_almaty_time(dt)`: Converts any datetime to Almaty timezone
+   - `ensure_timezone_aware(dt)`: Makes naive datetimes timezone-aware
+   - `format_pickup_time(dt)`: Formats datetimes for display
+
+3. **Cross-Midnight Pickup Windows**
+   - System correctly handles pickup windows that cross midnight
+   - When end time is earlier than start time, it's automatically adjusted to the next day
+   - Ensures proper functioning for evening/night pickup times (e.g., from 23:30 to 02:30)
+
+## Meal Expiration Management
+
+The application implements automatic management of expired meals:
+
+1. **Background Task for Deactivation**
+   - A periodic task checks for meals with passed pickup windows
+   - Runs every 10 minutes in the background
+   - Automatically deactivates expired meals by setting `is_active=False`
+   - Logs all deactivation events for troubleshooting
+
+2. **Expired Meal Filtering**
+   - All meal browsing and search functions filter out expired meals
+   - Uses current Almaty time for comparisons
+   - Prevents users from seeing or purchasing meals past their pickup window
+   - Ensures consistent handling across all meal-related operations
+
+3. **Timezone-Aware Queries**
+   - Database queries use timezone-aware datetime comparisons
+   - All expiration checks consider the Almaty timezone
+   - Consistent filtering throughout the application
