@@ -67,7 +67,10 @@ TEXT = {
     "meal_details_header": "Информация о блюде:\n",
     "meal_details": "Название: {name}\nОписание: {description}\nЦена: {price} тенге\nПоставщик: {vendor}\nКоличество: {quantity} порций\nВремя самовывоза: {pickup_start} - {pickup_end}\nАдрес: {address}",
     "meal_view_button": "Купить",
-    "meal_id_invalid": "Неверный ID блюда. Пожалуйста, используйте числовой ID."
+    "meal_id_invalid": "Неверный ID блюда. Пожалуйста, используйте числовой ID.",
+    "select_portions": "Выберите количество порций для заказа:",
+    "portion_selection": "Вы выбрали {count} порций блюда \"{name}\".\nОбщая стоимость: {total_price} тенге.",
+    "view_meal_button": "Посмотреть"
 }
 
 
@@ -94,6 +97,23 @@ class MealsNearbySearch(StatesGroup):
     waiting_for_location = State()
 
 
+# Define states for portion selection
+class PortionSelection(StatesGroup):
+    waiting_for_quantity = State()
+
+
+# Helper function to get the main menu keyboard
+def get_main_keyboard():
+    """Returns the main menu keyboard markup"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 Просмотреть блюда"), KeyboardButton(text="📍 Блюда поблизости")],
+            [KeyboardButton(text="🏪 Зарегистрироваться как поставщик"), KeyboardButton(text="❓ Помощь")]
+        ],
+        resize_keyboard=True
+    )
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     """Handler for /start command"""
@@ -101,14 +121,8 @@ async def cmd_start(message: Message):
     user_id = message.from_user.id
     consumer, created = await Consumer.get_or_create(telegram_id=user_id)
     
-    # Create a keyboard with common commands
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📋 Просмотреть блюда"), KeyboardButton(text="📍 Блюда поблизости")],
-            [KeyboardButton(text="🏪 Зарегистрироваться как поставщик"), KeyboardButton(text="❓ Помощь")]
-        ],
-        resize_keyboard=True
-    )
+    # Get the main keyboard
+    keyboard = get_main_keyboard()
     
     # Combine welcome message with usage instructions
     welcome_text = (
@@ -123,35 +137,10 @@ async def cmd_start(message: Message):
     await message.answer(welcome_text, reply_markup=keyboard)
 
 
-# Handle text button presses
-@dp.message(lambda message: message.text == "📋 Просмотреть блюда")
-async def button_browse_meals(message: Message):
-    """Handler for browse meals button"""
-    await cmd_browse_meals(message)
-
-
-@dp.message(lambda message: message.text == "📍 Блюда поблизости")
-async def button_meals_nearby(message: Message, state: FSMContext):
-    """Handler for meals nearby button"""
-    await cmd_meals_nearby(message, state)
-
-
-@dp.message(lambda message: message.text == "🏪 Зарегистрироваться как поставщик")
-async def button_register_vendor(message: Message, state: FSMContext):
-    """Handler for register vendor button"""
-    await cmd_register_vendor(message, state)
-
-
-@dp.message(lambda message: message.text == "❓ Помощь")
-async def button_help(message: Message):
-    """Handler for help button"""
-    await cmd_help(message)
-
-
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     """Handler for /help command"""
-    await message.answer(TEXT["help"])
+    await message.answer(TEXT["help"], reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("register_vendor"))
@@ -162,7 +151,7 @@ async def cmd_register_vendor(message: Message, state: FSMContext):
     # Check if already registered
     existing_vendor = await Vendor.filter(telegram_id=user_id).first()
     if existing_vendor:
-        await message.answer(TEXT["vendor_already_registered"].format(status=existing_vendor.status.value))
+        await message.answer(TEXT["vendor_already_registered"].format(status=existing_vendor.status.value), reply_markup=get_main_keyboard())
         return
     
     # Start registration process
@@ -202,7 +191,7 @@ async def process_vendor_phone(message: Message, state: FSMContext):
     await state.clear()
     
     # Notify the vendor
-    await message.answer(TEXT["vendor_registered"])
+    await message.answer(TEXT["vendor_registered"], reply_markup=get_main_keyboard())
     
     # Notify admin about new vendor registration
     if ADMIN_CHAT_ID:
@@ -521,7 +510,7 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
             pickup_end=data.get('pickup_end_str'),
             address=meal.location_address
         ),
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=get_main_keyboard()
     )
 
 
@@ -533,14 +522,14 @@ async def cmd_my_meals(message: Message):
     # Check if user is a registered vendor
     vendor = await Vendor.filter(telegram_id=user_id).first()
     if not vendor:
-        await message.answer(TEXT["not_vendor"])
+        await message.answer(TEXT["not_vendor"], reply_markup=get_main_keyboard())
         return
     
     # Get all active meals for this vendor
     meals = await Meal.filter(vendor=vendor, is_active=True)
     
     if not meals:
-        await message.answer(TEXT["my_meals_empty"])
+        await message.answer(TEXT["my_meals_empty"], reply_markup=get_main_keyboard())
         return
     
     # Build the meals list message
@@ -560,7 +549,7 @@ async def cmd_my_meals(message: Message):
             pickup_end=pickup_end
         ) + "\n"
     
-    await message.answer(response)
+    await message.answer(response, reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("delete_meal"))
@@ -571,13 +560,13 @@ async def cmd_delete_meal(message: Message):
     # Check if user is a registered vendor
     vendor = await Vendor.filter(telegram_id=user_id).first()
     if not vendor:
-        await message.answer(TEXT["not_vendor"])
+        await message.answer(TEXT["not_vendor"], reply_markup=get_main_keyboard())
         return
     
     # Get meal ID from command arguments
     command_parts = message.text.split()
     if len(command_parts) != 2:
-        await message.answer("Используйте формат: /delete_meal ID")
+        await message.answer("Используйте формат: /delete_meal ID", reply_markup=get_main_keyboard())
         return
     
     try:
@@ -587,7 +576,7 @@ async def cmd_delete_meal(message: Message):
         meal = await Meal.filter(id=meal_id, vendor=vendor, is_active=True).first()
         
         if not meal:
-            await message.answer(TEXT["meal_not_found"])
+            await message.answer(TEXT["meal_not_found"], reply_markup=get_main_keyboard())
             return
         
         # Deactivate the meal (soft delete)
@@ -595,10 +584,10 @@ async def cmd_delete_meal(message: Message):
         await meal.save()
         
         # Notify vendor
-        await message.answer(TEXT["meal_delete_success"])
+        await message.answer(TEXT["meal_delete_success"], reply_markup=get_main_keyboard())
     
     except (ValueError, TypeError):
-        await message.answer("Неверный формат ID. Используйте числовой ID блюда.")
+        await message.answer("Неверный формат ID. Используйте числовой ID блюда.", reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("browse_meals"))
@@ -613,19 +602,17 @@ async def cmd_browse_meals(message: Message):
     meals = await Meal.filter(is_active=True, quantity__gt=0).prefetch_related('vendor').order_by('-created_at')
     
     if not meals:
-        await message.answer(TEXT["browse_meals_empty"])
+        await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
         return
     
-    # Format the list of meals
-    response = TEXT["browse_meals_header"]
-    
+    # Process each meal individually with its own inline keyboard
     for meal in meals:
         # Format pickup times
         pickup_start = meal.pickup_start_time.strftime('%H:%M')
         pickup_end = meal.pickup_end_time.strftime('%H:%M')
         
-        # Add meal to response
-        response += TEXT["browse_meals_item"].format(
+        # Create meal listing text
+        meal_text = TEXT["browse_meals_item"].format(
             id=meal.id,
             name=meal.name,
             price=meal.price,
@@ -633,9 +620,134 @@ async def cmd_browse_meals(message: Message):
             quantity=meal.quantity,
             pickup_start=pickup_start,
             pickup_end=pickup_end
-        ) + "\n\n"
+        )
+        
+        # Create inline keyboard with View button
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text=TEXT["view_meal_button"], callback_data=f"view_meal:{meal.id}")]
+        ])
+        
+        # Send meal as separate message with its own button
+        await message.answer(meal_text, reply_markup=keyboard)
     
-    await message.answer(response)
+    # Return the main keyboard after listing all meals
+    await message.answer("Выберите блюдо, нажав на кнопку 'Посмотреть' под интересующим вас блюдом.", reply_markup=get_main_keyboard())
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('view_meal:'))
+async def callback_view_meal(callback_query: CallbackQuery):
+    """Handler for view meal button callback"""
+    # Extract meal ID from callback data
+    meal_id = int(callback_query.data.split(':')[1])
+    
+    # Find the meal
+    meal = await Meal.filter(id=meal_id, is_active=True, quantity__gt=0).prefetch_related('vendor').first()
+    
+    if not meal:
+        await callback_query.answer(TEXT["meal_not_found"])
+        return
+    
+    # Format pickup times
+    pickup_start = meal.pickup_start_time.strftime('%H:%M')
+    pickup_end = meal.pickup_end_time.strftime('%H:%M')
+    
+    # Create response with detailed meal information
+    response = TEXT["meal_details_header"]
+    response += TEXT["meal_details"].format(
+        name=meal.name,
+        description=meal.description,
+        price=meal.price,
+        vendor=meal.vendor.name,
+        quantity=meal.quantity,
+        pickup_start=pickup_start,
+        pickup_end=pickup_end,
+        address=meal.location_address
+    )
+    
+    # Create portion selection buttons
+    max_portions = min(5, meal.quantity)  # Limit selection to 5 or available quantity
+    buttons = []
+    row = []
+    
+    for i in range(1, max_portions + 1):
+        row.append(types.InlineKeyboardButton(text=str(i), callback_data=f"select_portions:{meal.id}:{i}"))
+        # Create rows of 5 buttons
+        if i % 5 == 0 or i == max_portions:
+            buttons.append(row)
+            row = []
+    
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    # Answer the callback to clear loading state
+    await callback_query.answer()
+    
+    # Send the message with portion selection
+    await callback_query.message.answer(response)
+    await callback_query.message.answer(TEXT["select_portions"], reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('select_portions:'))
+async def callback_select_portions(callback_query: CallbackQuery):
+    """Handler for portion selection button callback"""
+    # Extract meal ID and quantity from callback data
+    parts = callback_query.data.split(':')
+    meal_id = int(parts[1])
+    selected_portions = int(parts[2])
+    
+    # Find the meal
+    meal = await Meal.filter(id=meal_id, is_active=True, quantity__gt=0).prefetch_related('vendor').first()
+    
+    if not meal:
+        await callback_query.answer(TEXT["meal_not_found"])
+        return
+    
+    # Check if enough portions are available
+    if selected_portions > meal.quantity:
+        await callback_query.answer(f"Доступно только {meal.quantity} порций")
+        return
+    
+    # Calculate total price
+    total_price = meal.price * selected_portions
+    
+    # Create confirmation message
+    message = TEXT["portion_selection"].format(
+        count=selected_portions,
+        name=meal.name,
+        total_price=total_price
+    )
+    
+    # Create buy button
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text=TEXT["meal_view_button"], callback_data=f"buy_meal:{meal.id}:{selected_portions}")]
+    ])
+    
+    # Answer the callback to clear loading state
+    await callback_query.answer()
+    
+    # Send the confirmation message with buy button
+    await callback_query.message.answer(message, reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
+async def process_buy_callback(callback_query: CallbackQuery):
+    """Handler for buy meal button callback"""
+    # Extract meal ID and portions from callback data
+    parts = callback_query.data.split(':')
+    meal_id = int(parts[1])
+    portions = int(parts[2]) if len(parts) > 2 else 1
+    
+    # This is a placeholder for the actual payment flow to be implemented in Step 4
+    await callback_query.answer("Функциональность покупки будет доступна в ближайшее время!")
+    
+    # Optional: Display a message to inform user that the complete payment flow is coming soon
+    await callback_query.message.answer(f"Полный процесс покупки {portions} порций будет реализован в ближайшее время. Спасибо за интерес!", reply_markup=get_main_keyboard())
+
+
+# Handle text button presses
+@dp.message(lambda message: message.text == "📋 Просмотреть блюда")
+async def button_browse_meals(message: Message):
+    """Handler for browse meals button"""
+    await cmd_browse_meals(message)
 
 
 @dp.message(Command("meals_nearby"))
@@ -713,7 +825,7 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     
     # Check if message contains location
     if not message.location:
-        await message.answer(TEXT["meal_invalid_location"])
+        await message.answer(TEXT["meal_invalid_location"], reply_markup=get_main_keyboard())
         return
     
     # Clear state
@@ -732,12 +844,10 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     nearby_meals = await filter_meals_by_distance(meals, location.latitude, location.longitude, radius)
     
     if not nearby_meals:
-        await message.answer(TEXT["meals_nearby_empty"].format(radius=radius), reply_markup=ReplyKeyboardRemove())
+        await message.answer(TEXT["meals_nearby_empty"].format(radius=radius), reply_markup=get_main_keyboard())
         return
     
-    # Format the list of meals
-    response = TEXT["meals_nearby_header"]
-    
+    # Process each meal individually with its own inline keyboard
     for meal in nearby_meals:
         # Calculate distance
         distance = calculate_distance(location.latitude, location.longitude, meal.location_latitude, meal.location_longitude)
@@ -746,8 +856,8 @@ async def process_meals_nearby(message: Message, state: FSMContext):
         pickup_start = meal.pickup_start_time.strftime('%H:%M')
         pickup_end = meal.pickup_end_time.strftime('%H:%M')
         
-        # Add meal to response
-        response += TEXT["meals_nearby_item"].format(
+        # Create meal text
+        meal_text = TEXT["meals_nearby_item"].format(
             id=meal.id,
             name=meal.name,
             price=meal.price,
@@ -756,9 +866,18 @@ async def process_meals_nearby(message: Message, state: FSMContext):
             quantity=meal.quantity,
             pickup_start=pickup_start,
             pickup_end=pickup_end
-        ) + "\n\n"
+        )
+        
+        # Create inline keyboard with View button
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text=TEXT["view_meal_button"], callback_data=f"view_meal:{meal.id}")]
+        ])
+        
+        # Send meal as separate message with its own button
+        await message.answer(meal_text, reply_markup=keyboard)
     
-    await message.answer(response, reply_markup=ReplyKeyboardRemove())
+    # Return the main keyboard after listing all meals
+    await message.answer("Выберите блюдо, нажав на кнопку 'Посмотреть' под интересующим вас блюдом.", reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("view_meal"))
@@ -772,58 +891,41 @@ async def cmd_view_meal(message: Message):
     # Get meal ID from command arguments
     command_parts = message.text.split()
     if len(command_parts) != 2:
-        await message.answer("Используйте формат: /view_meal ID")
+        await message.answer("Используйте формат: /view_meal ID", reply_markup=get_main_keyboard())
         return
     
     try:
         meal_id = int(command_parts[1])
         
-        # Find the meal
-        meal = await Meal.filter(id=meal_id, is_active=True, quantity__gt=0).prefetch_related('vendor').first()
-        
-        if not meal:
-            await message.answer(TEXT["meal_not_found"])
-            return
-        
-        # Format pickup times
-        pickup_start = meal.pickup_start_time.strftime('%H:%M')
-        pickup_end = meal.pickup_end_time.strftime('%H:%M')
-        
-        # Create response with detailed meal information
-        response = TEXT["meal_details_header"]
-        response += TEXT["meal_details"].format(
-            name=meal.name,
-            description=meal.description,
-            price=meal.price,
-            vendor=meal.vendor.name,
-            quantity=meal.quantity,
-            pickup_start=pickup_start,
-            pickup_end=pickup_end,
-            address=meal.location_address
-        )
-        
-        # Create inline keyboard for buying
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=TEXT["meal_view_button"], callback_data=f"buy_meal:{meal.id}")]
-        ])
-        
-        await message.answer(response, reply_markup=keyboard)
+        # Simulate the view_meal callback to reuse the same logic
+        await callback_view_meal(types.CallbackQuery(
+            id="manual_command",
+            from_user=message.from_user,
+            chat_instance=str(message.chat.id),
+            message=message,
+            data=f"view_meal:{meal_id}"
+        ))
     
     except (ValueError, TypeError):
-        await message.answer(TEXT["meal_id_invalid"])
+        await message.answer(TEXT["meal_id_invalid"], reply_markup=get_main_keyboard())
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
-async def process_buy_callback(callback_query: CallbackQuery):
-    """Handler for buy meal button callback"""
-    # Extract meal ID from callback data
-    meal_id = int(callback_query.data.split(':')[1])
-    
-    # This is a placeholder for the actual payment flow to be implemented in Step 4
-    await callback_query.answer("Функциональность покупки будет доступна в ближайшее время!")
-    
-    # Optional: Display a message to inform user that the complete payment flow is coming soon
-    await callback_query.message.answer("Полный процесс покупки будет реализован в ближайшее время. Спасибо за интерес!")
+@dp.message(lambda message: message.text == "📍 Блюда поблизости")
+async def button_meals_nearby(message: Message, state: FSMContext):
+    """Handler for meals nearby button"""
+    await cmd_meals_nearby(message, state)
+
+
+@dp.message(lambda message: message.text == "🏪 Зарегистрироваться как поставщик")
+async def button_register_vendor(message: Message, state: FSMContext):
+    """Handler for register vendor button"""
+    await cmd_register_vendor(message, state)
+
+
+@dp.message(lambda message: message.text == "❓ Помощь")
+async def button_help(message: Message):
+    """Handler for help button"""
+    await cmd_help(message)
 
 
 async def main():

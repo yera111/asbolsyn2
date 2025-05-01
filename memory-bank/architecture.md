@@ -75,8 +75,9 @@ Uses aiogram framework for implementing the Telegram bot:
 
 The bot provides a user-friendly interface through:
 
-1. **Keyboard Menu**
-   - Accessible via the /start command
+1. **Persistent Keyboard Menu**
+   - Accessible throughout the entire user journey
+   - Always visible after every interaction with the bot
    - Includes buttons for browsing meals, finding nearby meals, vendor registration, and help
    - Buttons trigger the same functionality as their corresponding commands
    - Makes the bot more accessible to users unfamiliar with Telegram commands
@@ -163,10 +164,11 @@ Vendors can manage their meal listings using the following functions:
 The consumer functionality is implemented with the following features:
 
 1. **Browse Meals**
-   - Consumer sends `/browse_meals` command
+   - Consumer sends `/browse_meals` command or uses the corresponding menu button
    - System automatically registers the user as a consumer if not already registered
    - System retrieves all active meals with quantity > 0, ordered by most recent first
-   - System displays a formatted list of available meals with essential details:
+   - System displays each meal as a separate message with its own "View" button
+   - Each meal display includes essential details:
      - Meal name
      - Price
      - Vendor name
@@ -175,13 +177,14 @@ The consumer functionality is implemented with the following features:
    - If no meals are available, the system informs the user
 
 2. **Filter Meals Nearby**
-   - Consumer sends `/meals_nearby` command
+   - Consumer sends `/meals_nearby` command or uses the corresponding menu button
    - System automatically registers the user as a consumer if not already registered
    - System prompts user to share their location using Telegram's native location sharing
    - System uses Haversine formula to calculate distance between user and meal pickup locations
    - System filters meals to only show those within a 10km radius
    - System sorts meals by proximity (closest first)
-   - System displays a formatted list of nearby meals with essential details:
+   - System displays each nearby meal as a separate message with its own "View" button
+   - Each meal display includes essential details:
      - Meal name
      - Price
      - Distance to the meal (in kilometers)
@@ -190,8 +193,8 @@ The consumer functionality is implemented with the following features:
      - Pickup time window
    - If no meals are available within the radius, the system informs the user
 
-3. **View Meal Details**
-   - Consumer sends `/view_meal <id>` command with a specific meal ID
+3. **View Meal Details and Select Portions**
+   - Consumer clicks "View" button on a meal or uses `/view_meal <id>` command
    - System automatically registers the user as a consumer if not already registered
    - System displays detailed information about the meal:
      - Name
@@ -201,7 +204,10 @@ The consumer functionality is implemented with the following features:
      - Available quantity
      - Pickup time window
      - Pickup location address
-   - System provides a "Buy" button using Telegram's inline keyboard
+   - System provides portion selection buttons (1-5, limited by available quantity)
+   - User selects desired number of portions
+   - System calculates and displays total price based on selected portions
+   - System provides a "Buy" button for final purchase confirmation
    - When user clicks the "Buy" button, system registers the action and shows a placeholder message (payment integration will be implemented in Phase 4)
 
 4. **Future Features**

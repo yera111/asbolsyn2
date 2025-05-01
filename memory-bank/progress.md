@@ -27,6 +27,29 @@
   - Implemented direct access to main features through buttons
   - Ensured backward compatibility with command-based interactions
 
+### Step 1.3: Persistent Menu Implementation ✅
+- **Completed on:** May 17, 2025
+- **Status:** Completed
+- **Summary:**
+  - Made the main menu persistent across all interactions
+  - Implemented a reusable keyboard function for consistent UI
+  - Updated all command handlers to include the keyboard menu
+  - Ensured the menu remains visible after completing any action
+  - Improved user experience by eliminating the need to recall commands
+  - Made navigation intuitive and accessible at all times
+
+### Step 1.4: Enhanced Meal Purchasing Workflow ✅
+- **Completed on:** May 20, 2025
+- **Status:** Completed
+- **Summary:**
+  - Redesigned meal browsing to display each meal with its own "View" button
+  - Implemented direct access to meal details via inline buttons
+  - Added portion selection capability allowing users to specify quantity (1-5)
+  - Implemented total price calculation based on selected portions
+  - Created a more intuitive shopping experience with fewer commands
+  - Applied the same improvements to nearby meals search
+  - Maintained compatibility with command-based interaction methods
+
 ## Phase 2: Vendor Features
 
 ### Step 2.1: Vendor Registration (Admin Approval Process) ✅
