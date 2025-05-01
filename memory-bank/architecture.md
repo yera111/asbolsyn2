@@ -10,7 +10,8 @@ as-bolsyn/
 │   ├── bot.py                  # Main bot entry point and handlers
 │   ├── config.py               # Configuration and environment variables
 │   ├── db.py                   # Database connection utilities
-│   └── models.py               # Database models (Tortoise ORM)
+│   ├── models.py               # Database models (Tortoise ORM)
+│   └── metrics.py              # Metrics tracking and reporting
 ├── tests/                      # Test directory
 │   ├── __init__.py             # Test package initialization
 │   ├── test_bot.py             # Basic structure tests
@@ -55,6 +56,11 @@ Uses Tortoise ORM to define the database schema:
    - Fields: status, payment_id
    - Status can be: pending, paid, completed, cancelled
 
+5. **Metric Model**
+   - Represents tracked events for analytics and MVP hypothesis evaluation
+   - Fields: metric_type, value, entity_id, user_id, metadata, timestamp
+   - Used for tracking key user interactions throughout the application
+
 ### Database Connection (`src/db.py`)
 Handles initializing and closing database connections using Tortoise ORM.
 
@@ -71,6 +77,20 @@ Uses aiogram framework for implementing the Telegram bot:
 - Uses Russian text templates
 - Initializes database connection on startup
 
+### Metrics System (`src/metrics.py`)
+Implements comprehensive analytics for tracking MVP hypothesis:
+- Provides standardized tracking function for recording metrics events
+- Implements reporting capabilities for generating analytics dashboards
+- Supports conversion funnel analysis (browse → view → order → payment)
+- Provides admin-only metrics dashboard via the `/metrics` command
+- Tracks key performance indicators aligned with business goals:
+  - User acquisition (registrations)
+  - Engagement (meal creation, browsing)
+  - Conversion (order creation, payment)
+  - Sales performance (GMV, completed orders)
+- Non-blocking implementation ensures failures don't affect core application flow
+- Supports filtering by time period and metric types
+
 ## User Interface
 
 The bot provides a user-friendly interface through:
@@ -82,12 +102,29 @@ The bot provides a user-friendly interface through:
    - Buttons trigger the same functionality as their corresponding commands
    - Makes the bot more accessible to users unfamiliar with Telegram commands
 
-2. **Welcome Message**
+2. **Button Handler System**
+   - Each keyboard button has a corresponding message handler function
+   - Handler functions are registered using aiogram's message filters:
+     ```python
+     @dp.message(lambda message: message.text == "📋 Просмотреть блюда")
+     async def button_browse_meals(message: Message):
+         await cmd_browse_meals(message)
+     ```
+   - Button handlers delegate to command handlers to maintain consistent behavior
+   - Complete coverage ensures all interactive elements respond correctly
+   - Main menu buttons with dedicated handlers:
+     - "📋 Просмотреть блюда" (Browse Meals) → calls cmd_browse_meals
+     - "📍 Блюда поблизости" (Nearby Meals) → calls cmd_meals_nearby
+     - "🛒 Мои заказы" (My Orders) → calls cmd_my_orders
+     - "🏪 Зарегистрироваться как поставщик" (Register as Vendor) → calls cmd_register_vendor
+     - "❓ Помощь" (Help) → calls cmd_help
+
+3. **Welcome Message**
    - Provides a clear introduction to the bot's purpose
    - Includes brief instructions on available features
    - Guides users to use the keyboard menu or commands
 
-3. **Command System**
+4. **Command System**
    - Traditional Telegram commands (/start, /help, etc.)
    - Available for users who prefer text commands
 
@@ -183,6 +220,7 @@ The consumer functionality is implemented with the following features:
    - System uses Haversine formula to calculate distance between user and meal pickup locations
    - System filters meals to only show those within a 10km radius
    - System sorts meals by proximity (closest first)
+   - System maintains distance information throughout the filtering process for display
    - System displays each nearby meal as a separate message with its own "View" button
    - Each meal display includes essential details:
      - Meal name
@@ -484,3 +522,69 @@ The application implements automatic management of expired meals:
    - Database queries use timezone-aware datetime comparisons
    - All expiration checks consider the Almaty timezone
    - Consistent filtering throughout the application
+
+## Metrics & Analytics System
+
+The application includes a comprehensive metrics system to track key performance indicators (KPIs) and evaluate the success of the MVP hypothesis:
+
+1. **Database Schema**
+   - `Metric` model stores individual metric events with the following fields:
+     - `metric_type`: Categorizes the metric (user registration, meal view, order paid, etc.)
+     - `value`: Numeric value associated with the event (default 1.0 for counts)
+     - `entity_id`: Optional ID of the related entity (meal, order, etc.)
+     - `user_id`: Optional Telegram user ID to track user behavior
+     - `metadata`: JSON field for additional contextual data
+     - `timestamp`: When the metric was recorded (timezone-aware)
+
+2. **Metric Types**
+   - User acquisition metrics: `USER_REGISTRATION`, `VENDOR_REGISTRATION`, `VENDOR_APPROVAL`
+   - Engagement metrics: `MEAL_CREATION`, `MEAL_BROWSE`, `MEAL_VIEW`, `NEARBY_SEARCH`
+   - Conversion metrics: `ORDER_CREATED`, `ORDER_PAID`, `ORDER_COMPLETED`, `ORDER_CANCELLED`
+   - Behavioral metrics: `PORTION_SELECTION` for tracking order sizing preferences
+
+3. **Tracking Implementation**
+   - `track_metric()` function provides a standardized way to record metrics
+   - Non-blocking implementation ensures failures don't affect core application flow
+   - Detailed error logging for troubleshooting
+   - Automatic metadata collection for rich context
+
+4. **Reporting Capabilities**
+   - `get_metrics_report()` generates comprehensive reports with:
+     - Event counts by type
+     - Conversion rates (browse → view → order → payment)
+     - User acquisition statistics
+     - Engagement metrics (meals per vendor, average order value)
+     - Transaction metrics (sales per day)
+   - Time-based filtering allows for period comparisons
+   - Custom metric type filtering for targeted analysis
+
+5. **Dashboard for Administrators**
+   - Admin-only `/metrics` command provides real-time access to key metrics
+   - Overview section shows high-level performance indicators
+   - Weekly conversion rates to identify funnel bottlenecks
+   - Aggregated statistics on users, vendors, meals, and orders
+   - Gross Merchandise Value (GMV) calculation
+
+6. **Strategic Metrics Alignment**
+   The metrics system is designed to answer key business questions from the [Game Design Document](game-design-document.md):
+   - User Acquisition: How many users and vendors are onboarding?
+   - Engagement: How many meals are vendors listing per week?
+   - Sales Performance: How many meals are sold and what is the conversion rate?
+   - Revenue: What is the total GMV transacted through the platform?
+   - Retention: Are vendors continuing to list meals after initial registration?
+
+7. **Integration Points**
+   Metrics are recorded at key points in the user journey:
+   - When users first interact with the bot
+   - During vendor registration and approval
+   - When meals are created by vendors
+   - During meal browsing and detailed viewing
+   - Throughout the order and payment process
+   - During special interactions like nearby search
+
+8. **Future Extensions**
+   The metrics system is designed for extensibility:
+   - Additional metric types can be easily added
+   - The reporting system can accommodate new analysis requirements
+   - The underlying database schema supports detailed drill-down analysis
+   - The framework supports future visualization integrations

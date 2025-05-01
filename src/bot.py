@@ -2,6 +2,7 @@ import asyncio
 import logging
 import datetime
 import math
+import json
 from decimal import Decimal
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters.command import Command
@@ -12,8 +13,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from .config import BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE
 from .db import init_db, close_db
-from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus
+from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus, Metric, MetricType
 from .tasks import scheduled_tasks
+from .metrics import track_metric, get_metrics_report, get_metrics_dashboard_data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -171,6 +173,13 @@ async def cmd_start(message: Message):
     user_id = message.from_user.id
     consumer, created = await Consumer.get_or_create(telegram_id=user_id)
     
+    # Track user registration if this is a new user
+    if created:
+        await track_metric(
+            metric_type=MetricType.USER_REGISTRATION,
+            user_id=user_id
+        )
+    
     # Get the main keyboard
     keyboard = get_main_keyboard()
     
@@ -237,6 +246,14 @@ async def process_vendor_phone(message: Message, state: FSMContext):
         status=VendorStatus.PENDING
     )
     
+    # Track vendor registration metric
+    await track_metric(
+        metric_type=MetricType.VENDOR_REGISTRATION,
+        user_id=user_id,
+        entity_id=vendor.id,
+        metadata={"vendor_name": vendor_name}
+    )
+    
     # Clear the state
     await state.clear()
     
@@ -258,23 +275,22 @@ async def process_vendor_phone(message: Message, state: FSMContext):
 @dp.message(Command("approve_vendor"))
 async def cmd_approve_vendor(message: Message):
     """Handler for admin to approve a vendor"""
-    user_id = message.from_user.id
-    
-    # Check if user is admin
-    if not ADMIN_CHAT_ID or str(user_id) != ADMIN_CHAT_ID:
+    # Only admin can approve vendors
+    if str(message.from_user.id) != ADMIN_CHAT_ID:
         await message.answer(TEXT["not_admin"])
         return
     
-    # Get vendor ID from command arguments
-    command_parts = message.text.split()
-    if len(command_parts) != 2:
-        await message.answer("Используйте формат: /approve_vendor ID")
+    # Parse vendor ID from command arguments
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("Использование: /approve_vendor <telegram_id>")
         return
     
     try:
-        vendor_telegram_id = int(command_parts[1])
-        vendor = await Vendor.filter(telegram_id=vendor_telegram_id).first()
+        vendor_telegram_id = int(args[1])
         
+        # Find the vendor
+        vendor = await Vendor.filter(telegram_id=vendor_telegram_id).first()
         if not vendor:
             await message.answer(TEXT["vendor_not_found"].format(telegram_id=vendor_telegram_id))
             return
@@ -283,20 +299,28 @@ async def cmd_approve_vendor(message: Message):
         vendor.status = VendorStatus.APPROVED
         await vendor.save()
         
-        # Notify admin about successful approval
-        await message.answer(TEXT["admin_approved_vendor"].format(
-            telegram_id=vendor_telegram_id,
-            name=vendor.name
-        ))
+        # Track vendor approval metric
+        await track_metric(
+            metric_type=MetricType.VENDOR_APPROVAL,
+            entity_id=vendor.id,
+            user_id=vendor_telegram_id,
+            metadata={"vendor_name": vendor.name}
+        )
         
-        # Notify vendor about approval
+        # Notify admin
+        await message.answer(TEXT["admin_approved_vendor"].format(name=vendor.name, telegram_id=vendor_telegram_id))
+        
+        # Notify vendor
         await bot.send_message(
             chat_id=vendor_telegram_id,
             text=TEXT["vendor_approved"]
         )
     
-    except (ValueError, TypeError):
-        await message.answer("Неверный формат ID. Используйте числовой ID.")
+    except ValueError:
+        await message.answer("Неверный формат Telegram ID. Используйте число.")
+    except Exception as e:
+        logging.error(f"Error approving vendor: {e}")
+        await message.answer(f"Произошла ошибка при одобрении поставщика: {e}")
 
 
 @dp.message(Command("reject_vendor"))
@@ -511,61 +535,96 @@ async def process_meal_location_address(message: Message, state: FSMContext):
 
 @dp.message(MealCreation.waiting_for_location_coords)
 async def process_meal_location_coords(message: Message, state: FSMContext):
-    """Handler to process meal location coordinates and complete creation"""
-    user_id = message.from_user.id
-    
-    # Check if message contains location
+    """Handler to process meal location coordinates and complete meal creation"""
+    # Check if we received a location
     if not message.location:
         await message.answer(TEXT["meal_invalid_location"])
         return
     
-    # Save location coordinates
-    location = message.location
-    await state.update_data(
-        location_latitude=location.latitude,
-        location_longitude=location.longitude
-    )
+    # Get the latitude and longitude
+    latitude = message.location.latitude
+    longitude = message.location.longitude
     
-    # Get all data from state
+    # Get all the data from previous steps
     data = await state.get_data()
     
-    # Get vendor
-    vendor = await Vendor.filter(telegram_id=user_id).first()
+    # Create Meal object
+    vendor = await Vendor.filter(telegram_id=message.from_user.id).first()
     
-    # Ensure pickup times are timezone-aware
-    pickup_start = ensure_timezone_aware(data.get('pickup_start'))
-    pickup_end = ensure_timezone_aware(data.get('pickup_end'))
+    # Check if today's date should be used
+    is_today = data.get("pickup_start_is_today", True)
+    is_tomorrow = data.get("pickup_start_is_tomorrow", False)
     
-    # Create meal in database with timezone-aware datetimes
+    now = get_current_almaty_time()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Parse pickup start time
+    pickup_start_time_str = data.get("pickup_start")
+    hour, minute = map(int, pickup_start_time_str.split(":"))
+    
+    if is_today:
+        pickup_start_time = today.replace(hour=hour, minute=minute)
+    elif is_tomorrow:
+        pickup_start_time = today.replace(hour=hour, minute=minute) + datetime.timedelta(days=1)
+    else:
+        # Fallback to today
+        pickup_start_time = today.replace(hour=hour, minute=minute)
+    
+    # Parse pickup end time
+    pickup_end_time_str = data.get("pickup_end")
+    hour, minute = map(int, pickup_end_time_str.split(":"))
+    
+    pickup_end_time = pickup_start_time.replace(hour=hour, minute=minute)
+    
+    # If end time is earlier than start time, add 1 day to end time
+    if pickup_end_time <= pickup_start_time:
+        pickup_end_time += datetime.timedelta(days=1)
+    
+    # Create meal record
     meal = await Meal.create(
-        name=data.get('name'),
-        description=data.get('description'),
-        price=data.get('price'),
-        quantity=data.get('quantity'),
-        pickup_start_time=pickup_start,
-        pickup_end_time=pickup_end,
-        location_address=data.get('location_address'),
-        location_latitude=data.get('location_latitude'),
-        location_longitude=data.get('location_longitude'),
-        vendor=vendor
+        vendor=vendor,
+        name=data.get("name"),
+        description=data.get("description"),
+        price=data.get("price"),
+        quantity=data.get("quantity"),
+        pickup_start_time=pickup_start_time,
+        pickup_end_time=pickup_end_time,
+        location_address=data.get("location_address"),
+        location_latitude=latitude,
+        location_longitude=longitude,
+        is_active=True
+    )
+    
+    # Track meal creation metric
+    await track_metric(
+        metric_type=MetricType.MEAL_CREATION,
+        entity_id=meal.id,
+        user_id=message.from_user.id,
+        metadata={
+            "meal_name": meal.name,
+            "price": float(meal.price),
+            "quantity": meal.quantity,
+            "vendor_id": vendor.id,
+            "vendor_name": vendor.name
+        }
     )
     
     # Clear the state
     await state.clear()
     
-    # Format times for display
-    pickup_start_str = format_pickup_time(pickup_start)
-    pickup_end_str = format_pickup_time(pickup_end)
+    # Format pickup times
+    pickup_start_format = format_pickup_time(pickup_start_time)
+    pickup_end_format = format_pickup_time(pickup_end_time)
     
-    # Notify the vendor about successful meal creation
+    # Notify the vendor
     await message.answer(
         TEXT["meal_added_success"].format(
             name=meal.name,
             description=meal.description,
             price=meal.price,
             quantity=meal.quantity,
-            pickup_start=pickup_start_str,
-            pickup_end=pickup_end_str,
+            pickup_start=pickup_start_format,
+            pickup_end=pickup_end_format,
             address=meal.location_address
         ),
         reply_markup=get_main_keyboard()
@@ -650,245 +709,258 @@ async def cmd_delete_meal(message: Message):
 
 @dp.message(Command("browse_meals"))
 async def cmd_browse_meals(message: Message):
-    """Handler for /browse_meals command - Shows all available meals"""
+    """Handler for /browse_meals command"""
     user_id = message.from_user.id
     
     # Register user if not already registered
     consumer, created = await Consumer.get_or_create(telegram_id=user_id)
     
-    # Get current time in Almaty timezone
-    now = get_current_almaty_time()
+    # Track browse meals event
+    await track_metric(
+        metric_type=MetricType.MEAL_BROWSE,
+        user_id=user_id
+    )
     
-    # Get all active meals with quantity > 0 that haven't expired yet,
-    # ordered by creation date (newest first)
+    # Get all active meals with quantity > 0
+    current_time = get_current_almaty_time()
     meals = await Meal.filter(
-        is_active=True, 
+        is_active=True,
         quantity__gt=0,
-        pickup_end_time__gt=now
+        pickup_end_time__gt=current_time
     ).prefetch_related('vendor').order_by('-created_at')
     
     if not meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
         return
     
-    # Process each meal individually with its own inline keyboard
+    # Send a response for each meal to allow individual buttons
     for meal in meals:
-        # Format pickup times
-        pickup_start = to_almaty_time(meal.pickup_start_time).strftime('%H:%M')
-        pickup_end = to_almaty_time(meal.pickup_end_time).strftime('%H:%M')
-        
-        # Create meal listing text
-        meal_text = TEXT["browse_meals_item"].format(
-            id=meal.id,
-            name=meal.name,
-            price=meal.price,
-            vendor=meal.vendor.name,
-            quantity=meal.quantity,
-            pickup_start=pickup_start,
-            pickup_end=pickup_end
+        # Create inline keyboard with View button
+        keyboard = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(
+                    text=TEXT["view_meal_button"], 
+                    callback_data=f"view_meal:{meal.id}"
+                )]
+            ]
         )
         
-        # Create inline keyboard with View button
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=TEXT["view_meal_button"], callback_data=f"view_meal:{meal.id}")]
-        ])
+        # Format pickup times
+        pickup_start = format_pickup_time(meal.pickup_start_time)
+        pickup_end = format_pickup_time(meal.pickup_end_time)
         
-        # Send meal as separate message with its own button
-        await message.answer(meal_text, reply_markup=keyboard)
-    
-    # Return the main keyboard after listing all meals
-    await message.answer("Выберите блюдо, нажав на кнопку 'Посмотреть' под интересующим вас блюдом.", reply_markup=get_main_keyboard())
+        # Send message with meal details and View button
+        await message.answer(
+            TEXT["browse_meals_item"].format(
+                id=meal.id,
+                name=meal.name,
+                price=meal.price,
+                vendor=meal.vendor.name,
+                quantity=meal.quantity,
+                pickup_start=pickup_start,
+                pickup_end=pickup_end
+            ),
+            reply_markup=keyboard
+        )
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('view_meal:'))
 async def callback_view_meal(callback_query: CallbackQuery):
-    """Handler for view meal button callback"""
+    """Handler for 'View' button callback for a specific meal"""
+    # Register user if not already registered
+    user_id = callback_query.from_user.id
+    consumer, created = await Consumer.get_or_create(telegram_id=user_id)
+    
     # Extract meal ID from callback data
-    meal_id = int(callback_query.data.split(':')[1])
+    meal_id = int(callback_query.data.split(':', 1)[1])
     
-    # Get current time in Almaty timezone
-    now = get_current_almaty_time()
-    
-    # Find the meal that is active, with quantity > 0, and not expired
-    meal = await Meal.filter(
-        id=meal_id, 
-        is_active=True, 
-        quantity__gt=0,
-        pickup_end_time__gt=now
-    ).prefetch_related('vendor').first()
+    # Get the meal
+    meal = await Meal.filter(id=meal_id, is_active=True).prefetch_related('vendor').first()
     
     if not meal:
         await callback_query.answer(TEXT["meal_not_found"])
         return
     
-    # Format pickup times using Almaty timezone
-    pickup_start = to_almaty_time(meal.pickup_start_time).strftime('%H:%M')
-    pickup_end = to_almaty_time(meal.pickup_end_time).strftime('%H:%M')
-    
-    # Create response with detailed meal information
-    response = TEXT["meal_details_header"]
-    response += TEXT["meal_details"].format(
-        name=meal.name,
-        description=meal.description,
-        price=meal.price,
-        vendor=meal.vendor.name,
-        quantity=meal.quantity,
-        pickup_start=pickup_start,
-        pickup_end=pickup_end,
-        address=meal.location_address
+    # Track meal view metric
+    await track_metric(
+        metric_type=MetricType.MEAL_VIEW,
+        entity_id=meal.id,
+        user_id=user_id,
+        metadata={
+            "meal_name": meal.name,
+            "price": float(meal.price),
+            "vendor_name": meal.vendor.name
+        }
     )
     
-    # Create portion selection buttons
-    max_portions = min(5, meal.quantity)  # Limit selection to 5 or available quantity
-    buttons = []
-    row = []
+    # Format pickup times
+    pickup_start = format_pickup_time(meal.pickup_start_time)
+    pickup_end = format_pickup_time(meal.pickup_end_time)
+    
+    # Create options for selecting number of portions
+    portion_buttons = []
+    max_portions = min(5, meal.quantity)  # Limit to 5 or available quantity, whichever is smaller
     
     for i in range(1, max_portions + 1):
-        row.append(types.InlineKeyboardButton(text=str(i), callback_data=f"select_portions:{meal.id}:{i}"))
-        # Create rows of 5 buttons
-        if i % 5 == 0 or i == max_portions:
-            buttons.append(row)
-            row = []
+        portion_buttons.append(
+            types.InlineKeyboardButton(
+                text=str(i),
+                callback_data=f"select_portions:{meal.id}:{i}"
+            )
+        )
     
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    keyboard = types.InlineKeyboardMarkup(
+        inline_keyboard=[portion_buttons]
+    )
     
-    # Answer the callback to clear loading state
+    # Send detailed meal information
+    await callback_query.message.answer(
+        TEXT["meal_details_header"] + 
+        TEXT["meal_details"].format(
+            name=meal.name,
+            description=meal.description,
+            price=meal.price,
+            vendor=meal.vendor.name,
+            quantity=meal.quantity,
+            pickup_start=pickup_start,
+            pickup_end=pickup_end,
+            address=meal.location_address
+        ) + 
+        "\n\n" + TEXT["select_portions"],
+        reply_markup=keyboard
+    )
+    
+    # Answer the callback query
     await callback_query.answer()
-    
-    # Send the message with portion selection
-    await callback_query.message.answer(response)
-    await callback_query.message.answer(TEXT["select_portions"], reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('select_portions:'))
 async def callback_select_portions(callback_query: CallbackQuery):
-    """Handler for portion selection button callback"""
-    # Extract meal ID and quantity from callback data
+    """Handler for portion selection callback"""
+    # Parse callback data
     parts = callback_query.data.split(':')
     meal_id = int(parts[1])
-    selected_portions = int(parts[2])
+    count = int(parts[2])
     
-    # Find the meal
-    meal = await Meal.filter(id=meal_id, is_active=True, quantity__gt=0).prefetch_related('vendor').first()
+    # Track portion selection metric
+    await track_metric(
+        metric_type=MetricType.PORTION_SELECTION,
+        entity_id=meal_id,
+        user_id=callback_query.from_user.id,
+        value=float(count),
+        metadata={"portions_selected": count}
+    )
     
-    if not meal:
+    # Get the meal
+    meal = await Meal.filter(id=meal_id, is_active=True).first()
+    
+    if not meal or meal.quantity < count:
         await callback_query.answer(TEXT["meal_not_found"])
         return
     
-    # Check if enough portions are available
-    if selected_portions > meal.quantity:
-        await callback_query.answer(f"Доступно только {meal.quantity} порций")
-        return
-    
     # Calculate total price
-    total_price = meal.price * selected_portions
+    total_price = meal.price * count
     
-    # Create confirmation message
-    message = TEXT["portion_selection"].format(
-        count=selected_portions,
-        name=meal.name,
-        total_price=total_price
+    # Create Buy button
+    keyboard = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(
+                text=TEXT["meal_view_button"],
+                callback_data=f"buy_meal:{meal.id}:{count}"
+            )]
+        ]
     )
     
-    # Create buy button
-    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text=TEXT["meal_view_button"], callback_data=f"buy_meal:{meal.id}:{selected_portions}")]
-    ])
+    # Display the selection and total price
+    await callback_query.message.answer(
+        TEXT["portion_selection"].format(
+            count=count,
+            name=meal.name,
+            total_price=total_price
+        ),
+        reply_markup=keyboard
+    )
     
-    # Answer the callback to clear loading state
+    # Answer the callback query
     await callback_query.answer()
-    
-    # Send the confirmation message with buy button
-    await callback_query.message.answer(message, reply_markup=keyboard)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
 async def process_buy_callback(callback_query: CallbackQuery):
-    """Handler for buy meal button callback - Initiates the payment process"""
-    user_id = callback_query.from_user.id
-    
-    # Extract meal ID and portions from callback data
+    """Handler for Buy button callback"""
+    # Parse callback data
     parts = callback_query.data.split(':')
     meal_id = int(parts[1])
-    portions = int(parts[2]) if len(parts) > 2 else 1
+    count = int(parts[2])
     
-    try:
-        # Get the meal from the database
-        meal = await Meal.filter(id=meal_id, is_active=True).prefetch_related('vendor').first()
-        
-        if not meal:
-            await callback_query.answer("Блюдо не найдено или недоступно.")
-            return
-            
-        if meal.quantity < portions:
-            await callback_query.answer(f"Недостаточно порций. Доступно: {meal.quantity}.")
-            return
-            
-        # Get or create consumer
-        consumer, created = await Consumer.get_or_create(telegram_id=user_id)
-        
-        # Calculate total price
-        total_price = meal.price * portions
-        
-        # Create a new order
-        order = await Order.create(
-            consumer=consumer,
-            meal=meal,
-            status=OrderStatus.PENDING,
-            quantity=portions
-        )
-        
-        # Import the payment gateway here to avoid circular imports
-        from .payment import payment_gateway
-        
-        # Create payment
-        payment_id, payment_url = await payment_gateway.create_payment(
-            order_id=order.id,
-            amount=total_price,
-            description=f"Оплата за {portions} порций '{meal.name}'"
-        )
-        
-        if not payment_id or not payment_url:
-            await callback_query.answer("Не удалось создать платеж. Пожалуйста, попробуйте позже.")
-            return
-            
-        # Save payment ID to order
-        order.payment_id = payment_id
-        await order.save()
-        
-        # Create inline keyboard with payment link
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="Перейти к оплате", url=payment_url)]
-        ])
-        
-        # Notify the user
-        await callback_query.message.answer(
-            f"Заказ #{order.id} создан. Пожалуйста, перейдите по ссылке для оплаты {portions} порций '{meal.name}' на сумму {total_price} тенге.",
-            reply_markup=keyboard
-        )
-        
-        # Add instruction about webhook confirmation
-        await callback_query.message.answer(
-            "После успешной оплаты вы получите подтверждение. Если вы не получили подтверждение в течение 5 минут, пожалуйста, свяжитесь с поддержкой.",
-            reply_markup=get_main_keyboard()
-        )
-        
-        # For the MVP, we'll automatically simulate a successful payment after a delay
-        # In a real implementation, this would be handled by the webhook
-        asyncio.create_task(simulate_payment_webhook(order.id, payment_id))
-        
-        await callback_query.answer()
-        
-    except Exception as e:
-        logging.error(f"Error creating order: {e}")
-        await callback_query.answer("Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже.")
-
-
-# Handle text button presses
-@dp.message(lambda message: message.text == "📋 Просмотреть блюда")
-async def button_browse_meals(message: Message):
-    """Handler for browse meals button"""
-    await cmd_browse_meals(message)
+    user_id = callback_query.from_user.id
+    
+    # Get the meal
+    meal = await Meal.filter(id=meal_id, is_active=True).prefetch_related('vendor').first()
+    
+    if not meal or meal.quantity < count:
+        await callback_query.answer("Это блюдо больше не доступно или количество порций уменьшилось.")
+        return
+    
+    # Get the consumer
+    consumer = await Consumer.filter(telegram_id=user_id).first()
+    
+    # Create order
+    order = await Order.create(
+        consumer=consumer,
+        meal=meal,
+        status=OrderStatus.PENDING,
+        quantity=count
+    )
+    
+    # Track order creation metric
+    await track_metric(
+        metric_type=MetricType.ORDER_CREATED,
+        entity_id=order.id,
+        user_id=user_id,
+        value=float(count),
+        metadata={
+            "meal_id": meal.id,
+            "meal_name": meal.name,
+            "vendor_id": meal.vendor.id,
+            "vendor_name": meal.vendor.name,
+            "order_quantity": count,
+            "order_value": float(meal.price * count)
+        }
+    )
+    
+    # Generate payment ID (in a real app, this would come from a payment provider)
+    payment_id = f"PAY-{order.id}-{int(datetime.datetime.now().timestamp())}"
+    
+    # Update order with payment ID
+    order.payment_id = payment_id
+    await order.save()
+    
+    # Create payment URL (in a real app, this would be a link to the payment provider)
+    payment_url = f"https://example.com/pay?order_id={order.id}&amount={meal.price * count}"
+    
+    # Create payment button
+    keyboard = types.InlineKeyboardMarkup(
+        inline_keyboard=[
+            [types.InlineKeyboardButton(
+                text="Оплатить",
+                url=payment_url
+            )]
+        ]
+    )
+    
+    # Send order confirmation message
+    await callback_query.message.answer(
+        TEXT["order_created"].format(order_id=order.id) + "\n" + TEXT["payment_pending"],
+        reply_markup=keyboard
+    )
+    
+    # Answer the callback query
+    await callback_query.answer()
+    
+    # For demo/testing purposes, simulate a payment webhook after 10 seconds
+    # This would be replaced by an actual payment provider webhook in production
+    asyncio.create_task(simulate_payment_webhook(order.id, payment_id))
 
 
 @dp.message(Command("meals_nearby"))
@@ -955,77 +1027,90 @@ async def filter_meals_by_distance(meals, lat, lon, max_distance=10.0):
     # Sort by distance
     meals_with_distance.sort(key=lambda x: x[1])
     
-    # Return only the meal objects
-    return [meal for meal, _ in meals_with_distance]
+    # Return meals with their distances
+    return meals_with_distance
 
 
 @dp.message(MealsNearbySearch.waiting_for_location)
 async def process_meals_nearby(message: Message, state: FSMContext):
-    """Handler to process meals nearby search"""
-    user_id = message.from_user.id
-    
-    # Check if message contains location
+    """Handler to process nearby meals search based on user location"""
+    # Check if we received a location
     if not message.location:
-        await message.answer(TEXT["meal_invalid_location"], reply_markup=get_main_keyboard())
+        await message.answer(TEXT["meals_nearby_prompt"])
         return
     
-    # Clear state
+    # Clear the state
     await state.clear()
     
-    # Get location coordinates
-    location = message.location
+    # Get the latitude and longitude
+    user_lat = message.location.latitude
+    user_lon = message.location.longitude
     
-    # Define search radius in kilometers
-    radius = 10.0
+    # Track nearby search metric
+    await track_metric(
+        metric_type=MetricType.NEARBY_SEARCH,
+        user_id=message.from_user.id,
+        metadata={
+            "latitude": user_lat,
+            "longitude": user_lon
+        }
+    )
     
-    # Get current time in Almaty timezone
-    now = get_current_almaty_time()
-    
-    # Get all active meals with quantity > 0 that haven't expired yet
+    # Get all active meals with quantity > 0
+    current_time = get_current_almaty_time()
     meals = await Meal.filter(
-        is_active=True, 
+        is_active=True,
         quantity__gt=0,
-        pickup_end_time__gt=now
+        pickup_end_time__gt=current_time
     ).prefetch_related('vendor')
     
-    # Filter and sort meals by distance
-    nearby_meals = await filter_meals_by_distance(meals, location.latitude, location.longitude, radius)
-    
-    if not nearby_meals:
-        await message.answer(TEXT["meals_nearby_empty"].format(radius=radius), reply_markup=get_main_keyboard())
+    if not meals:
+        await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
         return
     
-    # Process each meal individually with its own inline keyboard
-    for meal in nearby_meals:
-        # Calculate distance
-        distance = calculate_distance(location.latitude, location.longitude, meal.location_latitude, meal.location_longitude)
-        
-        # Format pickup times
-        pickup_start = meal.pickup_start_time.strftime('%H:%M')
-        pickup_end = meal.pickup_end_time.strftime('%H:%M')
-        
-        # Create meal text
-        meal_text = TEXT["meals_nearby_item"].format(
-            id=meal.id,
-            name=meal.name,
-            price=meal.price,
-            distance=distance,
-            vendor=meal.vendor.name,
-            quantity=meal.quantity,
-            pickup_start=pickup_start,
-            pickup_end=pickup_end
+    # Define maximum distance in kilometers
+    max_distance = 10.0
+    
+    # Filter and sort meals by distance
+    nearby_meals = await filter_meals_by_distance(meals, user_lat, user_lon, max_distance)
+    
+    if not nearby_meals:
+        await message.answer(
+            TEXT["meals_nearby_empty"].format(radius=max_distance),
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    # Send a response for each nearby meal
+    for meal, distance in nearby_meals:
+        # Create inline keyboard with View button
+        keyboard = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(
+                    text=TEXT["view_meal_button"], 
+                    callback_data=f"view_meal:{meal.id}"
+                )]
+            ]
         )
         
-        # Create inline keyboard with View button
-        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text=TEXT["view_meal_button"], callback_data=f"view_meal:{meal.id}")]
-        ])
+        # Format pickup times
+        pickup_start = format_pickup_time(meal.pickup_start_time)
+        pickup_end = format_pickup_time(meal.pickup_end_time)
         
-        # Send meal as separate message with its own button
-        await message.answer(meal_text, reply_markup=keyboard)
-    
-    # Return the main keyboard after listing all meals
-    await message.answer("Выберите блюдо, нажав на кнопку 'Посмотреть' под интересующим вас блюдом.", reply_markup=get_main_keyboard())
+        # Send message with meal details and View button
+        await message.answer(
+            TEXT["meals_nearby_item"].format(
+                id=meal.id,
+                name=meal.name,
+                price=meal.price,
+                distance=distance,
+                vendor=meal.vendor.name,
+                quantity=meal.quantity,
+                pickup_start=pickup_start,
+                pickup_end=pickup_end
+            ),
+            reply_markup=keyboard
+        )
 
 
 @dp.message(Command("view_meal"))
@@ -1079,35 +1164,25 @@ async def button_help(message: Message):
 # Payment simulation for testing 
 async def simulate_payment_webhook(order_id, payment_id):
     """
-    Simulates a payment webhook notification with a successful payment.
-    This is only for demo/testing purposes in the MVP.
-    In a real implementation, a webhook endpoint would receive notifications from the payment gateway.
+    Simulates a payment webhook notification.
+    In a real application, this would be triggered by a payment provider's callback.
     """
     try:
-        # Wait a few seconds to simulate the payment process
-        await asyncio.sleep(5)
+        # Wait for 10 seconds to simulate payment processing
+        await asyncio.sleep(10)
         
-        # Simulate webhook payload
+        # Create a simulated webhook payload
         webhook_data = {
             "payment_id": payment_id,
-            "order_id": order_id,
             "status": "completed",
-            "amount": "0.00",  # Not used in processing
             "timestamp": datetime.datetime.now().isoformat()
         }
         
-        # Import the payment gateway to avoid circular imports
-        from .payment import payment_gateway
+        # Call the payment webhook handler
+        await process_payment_webhook(webhook_data)
         
-        # Process the simulated webhook
-        success = await payment_gateway.process_webhook(webhook_data)
-        
-        if success:
-            # Notify the user and vendor about the successful payment
-            await send_order_notifications(order_id)
-            
     except Exception as e:
-        logging.error(f"Error simulating payment webhook: {e}")
+        logging.error(f"Error in payment simulation: {e}")
 
 
 async def send_order_notifications(order_id):
@@ -1116,82 +1191,109 @@ async def send_order_notifications(order_id):
         # Get the order with related models
         order = await Order.filter(id=order_id).prefetch_related('consumer', 'meal', 'meal__vendor').first()
         
-        if not order or order.status != OrderStatus.PAID:
-            logging.error(f"Order not found or not paid: {order_id}")
+        if not order:
+            logging.error(f"Order not found for notifications: {order_id}")
             return
-            
-        # Get details
-        consumer = await order.consumer
-        meal = await order.meal
+        
+        # Get related models
+        meal = order.meal
         vendor = await meal.vendor
         
-        # Generate a unique order identifier for both parties to reference
-        order_ref = f"#{order.id}"
-        
-        # Calculate pickup window
-        pickup_start = meal.pickup_start_time.strftime('%H:%M')
-        pickup_end = meal.pickup_end_time.strftime('%H:%M')
+        # Format pickup times
+        pickup_start = format_pickup_time(meal.pickup_start_time)
+        pickup_end = format_pickup_time(meal.pickup_end_time)
         
         # Notify the consumer
-        consumer_message = (
-            f"✅ Заказ {order_ref} успешно оплачен!\n\n"
-            f"Детали заказа:\n"
-            f"- Блюдо: {meal.name}\n"
-            f"- Количество порций: {order.quantity}\n"
-            f"- Поставщик: {vendor.name}\n"
-            f"- Адрес самовывоза: {meal.location_address}\n"
-            f"- Время самовывоза: с {pickup_start} до {pickup_end}\n\n"
-            f"Пожалуйста, сохраните номер заказа {order_ref} для предъявления поставщику при получении."
+        consumer_message = TEXT["order_confirmed"].format(
+            order_id=order.id,
+            meal_name=meal.name,
+            quantity=order.quantity,
+            vendor_name=vendor.name,
+            address=meal.location_address,
+            pickup_start=pickup_start,
+            pickup_end=pickup_end
         )
         
-        await bot.send_message(chat_id=consumer.telegram_id, text=consumer_message, reply_markup=get_main_keyboard())
+        await bot.send_message(
+            chat_id=order.consumer.telegram_id,
+            text=consumer_message,
+            reply_markup=get_main_keyboard()
+        )
         
         # Notify the vendor
-        vendor_message = (
-            f"🔔 Новый оплаченный заказ {order_ref}!\n\n"
-            f"Детали заказа:\n"
-            f"- Блюдо: {meal.name}\n"
-            f"- Количество порций: {order.quantity}\n"
-            f"- Время самовывоза: с {pickup_start} до {pickup_end}\n\n"
-            f"Пожалуйста, подготовьте заказ к указанному времени самовывоза."
+        vendor_message = TEXT["vendor_notification"].format(
+            order_id=order.id,
+            meal_name=meal.name,
+            quantity=order.quantity,
+            pickup_start=pickup_start,
+            pickup_end=pickup_end
         )
         
-        await bot.send_message(chat_id=vendor.telegram_id, text=vendor_message)
+        await bot.send_message(
+            chat_id=vendor.telegram_id,
+            text=vendor_message
+        )
         
     except Exception as e:
         logging.error(f"Error sending order notifications: {e}")
 
 
-# API handler for real payment gateway webhooks
 async def process_payment_webhook(webhook_data, signature=None):
     """
-    Process a webhook notification from the payment gateway.
-    This function would be called from a web framework route handler in a real deployment.
-    
-    Args:
-        webhook_data: The webhook payload as a dictionary
-        signature: Optional webhook signature for verification
-        
-    Returns:
-        bool: True if processing succeeded, False otherwise
+    Process payment webhook notification from payment provider.
+    In production, this would be triggered by a real payment provider webhook.
     """
     try:
-        # Import the payment gateway to avoid circular imports
-        from .payment import payment_gateway
+        # Verify webhook (in production, this would include verifying the signature)
+        payment_id = webhook_data.get("payment_id")
+        status = webhook_data.get("status")
         
-        # Process the webhook
-        success = await payment_gateway.process_webhook(webhook_data)
+        if not payment_id or status != "completed":
+            logging.error(f"Invalid webhook data: {webhook_data}")
+            return False
         
-        if success and webhook_data.get("status") == "completed":
-            # Send notifications about the successful payment
-            order_id = webhook_data.get("order_id")
-            if order_id:
-                await send_order_notifications(order_id)
-                
-        return success
+        # Find the order with this payment ID
+        order = await Order.filter(payment_id=payment_id).prefetch_related('meal', 'consumer').first()
+        
+        if not order:
+            logging.error(f"Order not found for payment ID: {payment_id}")
+            return False
+        
+        # Check if the order is already paid (to prevent duplicate processing)
+        if order.status != OrderStatus.PENDING:
+            logging.info(f"Order {order.id} already processed, status: {order.status}")
+            return True
+        
+        # Update the order status
+        order.status = OrderStatus.PAID
+        await order.save()
+        
+        # Track payment metric
+        await track_metric(
+            metric_type=MetricType.ORDER_PAID,
+            entity_id=order.id,
+            user_id=order.consumer.telegram_id,
+            value=float(order.quantity),
+            metadata={
+                "meal_id": order.meal.id,
+                "meal_name": order.meal.name,
+                "order_quantity": order.quantity,
+                "order_value": float(order.meal.price * order.quantity)
+            }
+        )
+        
+        # Update the meal quantity
+        meal = order.meal
+        meal.quantity = max(0, meal.quantity - order.quantity)
+        await meal.save()
+        
+        # Send notifications
+        await send_order_notifications(order.id)
+        
+        return True
         
     except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
+        logging.error(f"Error processing payment webhook: {e}")
         return False
 
 
@@ -1288,61 +1390,166 @@ async def cmd_vendor_orders(message: Message):
 # ---------------------------------------------------------------------------
 @dp.message(Command("complete_order"))
 async def cmd_complete_order(message: Message):
-    """
-    Подтвердить выдачу заказа покупателю.
-    Использование: /complete_order <id_заказа>
-    Доступно только одобренным поставщикам и только для оплаченных заказов.
-    """
-    args = message.text.strip().split()
-    if len(args) != 2 or not args[1].isdigit():
-        await message.answer("Использование: /complete_order <id_заказа>", reply_markup=get_main_keyboard())
-        return
-
-    order_id = int(args[1])
-
-    # 1. Проверяем, что отправитель – одобренный поставщик
-    vendor = await Vendor.filter(telegram_id=message.from_user.id,
-                                 status=VendorStatus.APPROVED).first()
+    """Handler for vendor to complete an order"""
+    user_id = message.from_user.id
+    
+    # Check if sender is a vendor
+    vendor = await Vendor.filter(telegram_id=user_id).first()
     if not vendor:
-        await message.answer("Команда доступна только одобренным поставщикам.", reply_markup=get_main_keyboard())
+        await message.answer(TEXT["not_vendor"], reply_markup=get_main_keyboard())
         return
-
-    # 2. Находим заказ и убеждаемся, что блюдо принадлежит поставщику
-    order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer').first()
-    if not order:
-        await message.answer("Заказ не найден.", reply_markup=get_main_keyboard())
+    
+    # Check if vendor is approved
+    if vendor.status != VendorStatus.APPROVED:
+        await message.answer(TEXT["vendor_not_approved"], reply_markup=get_main_keyboard())
         return
-
-    meal = await order.meal
-    if meal.vendor_id != vendor.id:
-        await message.answer("Этот заказ не относится к вашим блюдам.", reply_markup=get_main_keyboard())
+    
+    # Parse order ID from command
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(TEXT["order_complete_usage"], reply_markup=get_main_keyboard())
         return
-
-    # 3. Заказ должен быть оплачен, чтобы перейти в COMPLETED
-    if order.status != OrderStatus.PAID:
-        await message.answer("Статус заказа должен быть «Оплачен», чтобы подтвердить выдачу.",
-                             reply_markup=get_main_keyboard())
-        return
-
-    # 4. Обновляем статус и время выполнения
-    order.status = OrderStatus.COMPLETED
-    order.completed_at = datetime.datetime.now(tz=ALMATY_TIMEZONE)
-    await order.save()
-    # 5. Уведомляем покупателя
-    consumer = await order.consumer
+    
     try:
-        await bot.send_message(
-            consumer.telegram_id,
-            f"Поставщик подтвердил выдачу вашего заказа №{order.id}. Приятного аппетита!"
+        order_id = int(args[1])
+        
+        # Get the order and check if it belongs to this vendor's meal
+        order = await Order.filter(id=order_id).prefetch_related('meal', 'meal__vendor', 'consumer').first()
+        
+        if not order:
+            await message.answer(TEXT["meal_not_found"], reply_markup=get_main_keyboard())
+            return
+        
+        # Verify the meal belongs to this vendor
+        if order.meal.vendor.id != vendor.id:
+            await message.answer(TEXT["meal_not_found"], reply_markup=get_main_keyboard())
+            return
+        
+        # Check order status is PAID
+        if order.status != OrderStatus.PAID:
+            await message.answer(TEXT["order_complete_not_paid"], reply_markup=get_main_keyboard())
+            return
+        
+        # Update order status to COMPLETED
+        order.status = OrderStatus.COMPLETED
+        order.completed_at = get_current_almaty_time()
+        await order.save()
+        
+        # Track order completion metric
+        await track_metric(
+            metric_type=MetricType.ORDER_COMPLETED,
+            entity_id=order.id,
+            user_id=user_id,
+            value=float(order.quantity),
+            metadata={
+                "meal_id": order.meal.id,
+                "meal_name": order.meal.name,
+                "consumer_id": order.consumer.telegram_id,
+                "order_quantity": order.quantity,
+                "order_value": float(order.meal.price * order.quantity)
+            }
         )
-    except Exception as exc:
-        logging.warning("Не удалось отправить сообщение покупателю: %s", exc)
+        
+        # Notify the vendor
+        await message.answer(TEXT["order_mark_completed"].format(order_id=order.id), reply_markup=get_main_keyboard())
+        
+        # Notify the consumer
+        consumer_message = (
+            f"✅ Ваш заказ #{order.id} был отмечен как выполненный!\n\n"
+            f"Блюдо: {order.meal.name}\n"
+            f"Количество порций: {order.quantity}\n"
+            f"Поставщик: {vendor.name}\n\n"
+            f"Спасибо за использование сервиса As Bolsyn!"
+        )
+        
+        await bot.send_message(
+            chat_id=order.consumer.telegram_id,
+            text=consumer_message
+        )
+        
+    except ValueError:
+        await message.answer("Неверный формат ID заказа. Используйте число.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error completing order: {e}")
+        await message.answer(f"Произошла ошибка при выполнении заказа: {e}", reply_markup=get_main_keyboard())
 
-    # 6. Подтверждаем поставщику
-    await message.answer(f"Заказ №{order.id} успешно отмечен как выполненный.",
-                         reply_markup=get_main_keyboard())
+# Add a new command for viewing metrics (admin only)
+@dp.message(Command("metrics"))
+async def cmd_metrics(message: Message):
+    """Handler for admin to view metrics dashboard"""
+    user_id = message.from_user.id
+    
+    # Only admin can view metrics
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer(TEXT["not_admin"], reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        # Get metrics dashboard data
+        dashboard = await get_metrics_dashboard_data()
+        
+        # Format the dashboard data as a readable message
+        overview = dashboard.get("overview", {})
+        
+        metrics_text = (
+            "📊 *Метрики As Bolsyn*\n\n"
+            "*Общая статистика:*\n"
+            f"• Пользователей: {overview.get('total_users', 0)}\n"
+            f"• Поставщиков: {overview.get('approved_vendors', 0)}/{overview.get('total_vendors', 0)}\n"
+            f"• Активных блюд: {overview.get('active_meals', 0)}\n"
+            f"• Всего блюд: {overview.get('total_meals_ever', 0)}\n"
+            f"• Оплаченных заказов: {overview.get('paid_orders', 0)}\n"
+            f"• Завершенных заказов: {overview.get('completed_orders', 0)}\n"
+            f"• Общий оборот: {overview.get('gmv_total', 0)} тг\n\n"
+        )
+        
+        # Add conversion rates from the last 7 days
+        conversion = dashboard.get("weekly", {}).get("conversion_rates", {})
+        if isinstance(conversion, dict):
+            metrics_text += (
+                "*Конверсии (7 дней):*\n"
+                f"• Просмотр → Детали: {conversion.get('browse_to_view', 0)}%\n"
+                f"• Детали → Заказ: {conversion.get('view_to_order', 0)}%\n"
+                f"• Заказ → Оплата: {conversion.get('order_to_payment', 0)}%\n"
+                f"• Просмотр → Покупка: {conversion.get('overall_browse_to_purchase', 0)}%\n"
+            )
+        
+        # Send the formatted metrics message
+        await message.answer(metrics_text, parse_mode="Markdown")
+        
+        # Generate a detailed report for the last 30 days
+        thirty_days_ago = datetime.datetime.now() - datetime.timedelta(days=30)
+        detailed_report = await get_metrics_report(start_date=thirty_days_ago)
+        
+        # Convert the report to a formatted string (simplified for readability)
+        report_text = (
+            "📝 *Детальный отчет (30 дней)*\n\n"
+            f"Период: {detailed_report['time_period']['start_date']} — {detailed_report['time_period']['end_date']}\n\n"
+        )
+        
+        # Add count summary
+        counts = detailed_report.get("summary", {}).get("counts", {})
+        if counts:
+            report_text += "*События:*\n"
+            for event_type, count in counts.items():
+                # Convert snake_case to readable text
+                readable_type = " ".join(event_type.split("_")).capitalize()
+                report_text += f"• {readable_type}: {count}\n"
+        
+        # Send the detailed report
+        await message.answer(report_text, parse_mode="Markdown")
+        
+    except Exception as e:
+        logging.error(f"Error generating metrics: {e}")
+        await message.answer(f"Произошла ошибка при получении метрик: {e}", reply_markup=get_main_keyboard())
 
-# Add handler for the new orders button
+
+@dp.message(lambda message: message.text == "📋 Просмотреть блюда")
+async def button_browse_meals(message: Message):
+    """Handler for browse meals button"""
+    await cmd_browse_meals(message)
+
+
 @dp.message(lambda message: message.text == "🛒 Мои заказы")
 async def button_my_orders(message: Message):
     """Handler for my orders button"""

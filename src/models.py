@@ -16,6 +16,21 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class MetricType(str, Enum):
+    USER_REGISTRATION = "user_registration"
+    VENDOR_REGISTRATION = "vendor_registration"
+    VENDOR_APPROVAL = "vendor_approval"
+    MEAL_CREATION = "meal_creation"
+    MEAL_VIEW = "meal_view"
+    MEAL_BROWSE = "meal_browse"
+    NEARBY_SEARCH = "nearby_search"
+    ORDER_CREATED = "order_created"
+    ORDER_PAID = "order_paid"
+    ORDER_COMPLETED = "order_completed"
+    ORDER_CANCELLED = "order_cancelled"
+    PORTION_SELECTION = "portion_selection"
+
+
 class Vendor(Model):
     """Vendor model representing food businesses."""
     id = fields.IntField(pk=True)
@@ -83,3 +98,17 @@ class Order(Model):
 
     class Meta:
         table = "orders"
+
+
+class Metric(Model):
+    """Metrics model for tracking key performance indicators."""
+    id = fields.IntField(pk=True)
+    metric_type = fields.CharEnumField(MetricType)
+    value = fields.FloatField(default=1.0)  # Default is 1.0 for count-based metrics
+    entity_id = fields.IntField(null=True)  # Optional ID of related entity (meal, order, etc.)
+    user_id = fields.BigIntField(null=True)  # Optional Telegram user ID
+    metadata = fields.JSONField(null=True)  # Additional contextual data
+    timestamp = fields.DatetimeField(auto_now_add=True)
+    
+    class Meta:
+        table = "metrics"

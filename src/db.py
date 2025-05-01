@@ -1,7 +1,7 @@
 from tortoise import Tortoise
 from tortoise.exceptions import OperationalError
 from .config import DATABASE_URL
-from .models import Vendor, Consumer, Meal, Order
+from .models import Vendor, Consumer, Meal, Order, Metric
 
 
 async def init_db():
