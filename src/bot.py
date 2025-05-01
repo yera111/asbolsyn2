@@ -1224,7 +1224,7 @@ async def button_my_orders(message: Message):
 
 
 async def main():
-    """Main function to run the bot"""
+    """Main function to run the bot in simple polling mode"""
     # Initialize database connection
     await init_db()
     
@@ -1237,7 +1237,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    """Entry point for the application"""
+    """Entry point for direct execution (polling mode)"""
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):

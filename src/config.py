@@ -7,6 +7,14 @@ load_dotenv()
 # Check if running in pytest
 TESTING = "PYTEST_CURRENT_TEST" in os.environ
 
+# Webhook mode (True for production, False for local polling)
+WEBHOOK_MODE = os.getenv("WEBHOOK_MODE", "False").lower() in ["true", "1", "yes"]
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "https://your-app-name.onrender.com")
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")  # for listen on all interfaces
+WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", os.getenv("PORT", "8000")))  # Default port that most PaaS use
+
 # Bot configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "test_token" if TESTING else None)
 if not BOT_TOKEN and not TESTING:

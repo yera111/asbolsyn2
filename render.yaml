@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: as-bolsyn-bot
+    env: python
+    region: singapore # Choose a region closest to Kazakhstan
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:application
+    plan: free # Start with the free plan for testing
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: WEBHOOK_MODE
+        value: true
+      - key: WEBHOOK_HOST
+        fromService:
+          type: web
+          name: as-bolsyn-bot
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: WEBHOOK_PATH
+        value: /webhook
+      - key: BOT_TOKEN
+        sync: false # Requires manual setup in Render dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false 
+      - key: DB_PASSWORD
+        sync: false
+      - key: ADMIN_CHAT_ID
+        sync: false
+      - key: PAYMENT_GATEWAY_ENABLED
+        sync: false
+      - key: PAYMENT_GATEWAY_API_KEY
+        sync: false
+      - key: PAYMENT_GATEWAY_SECRET
+        sync: false
+      - key: PAYMENT_GATEWAY_URL
+        sync: false
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMENT_SUCCESS_URL
+        sync: false
+      - key: PAYMENT_FAILURE_URL
+        sync: false
+
+databases:
+  - name: as-bolsyn-db
+    plan: free # Start with the free plan for testing
+    region: singapore # Choose a region closest to Kazakhstan
+    databaseName: asbolsyn
+    user: asbolsyn 

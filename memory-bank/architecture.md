@@ -338,3 +338,105 @@ Planned features for future phases include:
    - Allow consumers to subscribe to favorite vendors
    - Send notifications when new meals are listed by subscribed vendors
    - Implement loyalty rewards for repeat customers
+
+## Deployment Architecture
+
+The application is designed to be deployed to a Platform-as-a-Service (PaaS) provider, with the following key components:
+
+1. **Web Service**
+   - Deployed as a web service on a PaaS platform (e.g., Render)
+   - Supports both development (polling) and production (webhook) modes
+   - Uses gunicorn as a production-ready WSGI server
+   - Handles payment gateway webhooks for transaction confirmation
+
+2. **Database Service**
+   - Uses PostgreSQL as a managed database service
+   - Connects using environment variables for secure credential management
+   - Scalable database design to handle growing user base
+   - Includes indexes on frequently queried fields for performance
+
+3. **Webhook Configuration**
+   - Uses Telegram webhooks in production for efficient message handling
+   - Configurable webhook URL and path
+   - Integrated with aiohttp for asynchronous HTTP request handling
+   - Includes separate endpoint for payment webhooks
+
+4. **Environment Variable Management**
+   - All configuration parameters stored as environment variables
+   - Includes sensible defaults for local development
+   - Separates development and production configurations
+   - Uses python-dotenv for local development environment
+
+5. **Security Considerations**
+   - HTTPS enforcement for all webhook endpoints
+   - Payment webhook signature verification
+   - Database credentials stored as secure environment variables
+   - Admin authentication for privileged operations
+
+### Deployment Workflow
+
+The deployment workflow follows these steps:
+
+1. **Development**
+   - Local development using polling mode
+   - Test database using SQLite in-memory for rapid testing
+   - Run using `run_dev.py` script
+
+2. **Production Preparation**
+   - Configuration of environment variables on PaaS provider
+   - Setting up PostgreSQL database instance
+   - Setting webhook mode to True for production environment
+
+3. **Deployment Process**
+   - Automatic deployment from GitHub repository
+   - Build process installs dependencies from requirements.txt
+   - Application starts using gunicorn and the wsgi.py entry point
+   - Webhook automatically configured on application startup
+
+4. **Monitoring & Maintenance**
+   - Logging configured for production environment
+   - Error handling for webhook processing
+   - Graceful shutdown procedures to maintain database integrity
+
+## End-to-End Testing Approach
+
+The application includes a comprehensive end-to-end testing framework to validate all functionality in the production environment:
+
+1. **Test Framework Structure**
+   - `scripts/e2e_test.py`: Structured test script that guides through all test scenarios
+   - `scripts/setup_test_data.py`: Tool for configuring test accounts and credentials
+   - `docs/e2e_testing_guide.md`: Detailed documentation of the testing process
+
+2. **Test Scenarios**
+   - Vendor registration and approval flow
+   - Meal creation and management
+   - Consumer browse and purchase
+   - Payment and order fulfillment
+   - Nearby meal search functionality
+   - Order history verification
+
+3. **Testing Methodology**
+   - Manual testing guided by structured script
+   - Detailed step-by-step instructions
+   - Clear expected outcomes
+   - Comprehensive logging for test results
+   - Test reports to track testing progress
+
+4. **Test Data Management**
+   - Configurable test accounts for consistent testing
+   - Test payment credentials integration
+   - Test location coordinates for Almaty
+   - Standard test meal configurations
+
+5. **Production Validation**
+   - Pre-launch validation checklist
+   - Language verification (Russian)
+   - Error handling verification
+   - Full flow verification from vendor registration to consumer purchase
+   - Payment confirmation and notification testing
+
+6. **Testing Tools Integration**
+   - Logging framework for test results
+   - Structured test step organization
+   - Configuration file generation for repeatability
+   - Environment-specific testing parameters
