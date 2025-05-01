@@ -101,7 +101,51 @@ async def cmd_start(message: Message):
     user_id = message.from_user.id
     consumer, created = await Consumer.get_or_create(telegram_id=user_id)
     
-    await message.answer(TEXT["welcome"])
+    # Create a keyboard with common commands
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📋 Просмотреть блюда"), KeyboardButton(text="📍 Блюда поблизости")],
+            [KeyboardButton(text="🏪 Зарегистрироваться как поставщик"), KeyboardButton(text="❓ Помощь")]
+        ],
+        resize_keyboard=True
+    )
+    
+    # Combine welcome message with usage instructions
+    welcome_text = (
+        f"{TEXT['welcome']}\n\n"
+        "Что вы можете сделать:\n"
+        "• Просмотреть доступные блюда\n"
+        "• Найти блюда рядом с вами\n"
+        "• Зарегистрироваться как поставщик питания\n\n"
+        "Выберите опцию из меню ниже или используйте команды бота:"
+    )
+    
+    await message.answer(welcome_text, reply_markup=keyboard)
+
+
+# Handle text button presses
+@dp.message(lambda message: message.text == "📋 Просмотреть блюда")
+async def button_browse_meals(message: Message):
+    """Handler for browse meals button"""
+    await cmd_browse_meals(message)
+
+
+@dp.message(lambda message: message.text == "📍 Блюда поблизости")
+async def button_meals_nearby(message: Message, state: FSMContext):
+    """Handler for meals nearby button"""
+    await cmd_meals_nearby(message, state)
+
+
+@dp.message(lambda message: message.text == "🏪 Зарегистрироваться как поставщик")
+async def button_register_vendor(message: Message, state: FSMContext):
+    """Handler for register vendor button"""
+    await cmd_register_vendor(message, state)
+
+
+@dp.message(lambda message: message.text == "❓ Помощь")
+async def button_help(message: Message):
+    """Handler for help button"""
+    await cmd_help(message)
 
 
 @dp.message(Command("help"))

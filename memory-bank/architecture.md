@@ -61,6 +61,8 @@ Handles initializing and closing database connections using Tortoise ORM.
 ### Bot Implementation (`src/bot.py`)
 Uses aiogram framework for implementing the Telegram bot:
 - Implements command handlers (/start, /help, /register_vendor, /add_meal, /my_meals, /delete_meal, /browse_meals)
+- Provides an intuitive keyboard menu for common functions
+- Uses button handlers to respond to menu interactions
 - Automatically registers consumers
 - Implements Finite State Machine (FSM) for vendor registration and meal creation flows
 - Implements vendor approval/rejection process
@@ -68,6 +70,25 @@ Uses aiogram framework for implementing the Telegram bot:
 - Implements consumer browse functionality
 - Uses Russian text templates
 - Initializes database connection on startup
+
+## User Interface
+
+The bot provides a user-friendly interface through:
+
+1. **Keyboard Menu**
+   - Accessible via the /start command
+   - Includes buttons for browsing meals, finding nearby meals, vendor registration, and help
+   - Buttons trigger the same functionality as their corresponding commands
+   - Makes the bot more accessible to users unfamiliar with Telegram commands
+
+2. **Welcome Message**
+   - Provides a clear introduction to the bot's purpose
+   - Includes brief instructions on available features
+   - Guides users to use the keyboard menu or commands
+
+3. **Command System**
+   - Traditional Telegram commands (/start, /help, etc.)
+   - Available for users who prefer text commands
 
 ## Vendor Registration Process
 
