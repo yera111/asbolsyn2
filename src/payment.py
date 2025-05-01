@@ -53,12 +53,17 @@ class PaymentGateway:
         # For the MVP, we'll simulate the payment flow
         logger.info(f"Creating payment {payment_id} for order {order_id} with amount {amount}")
         
-        # Generate a simulated payment URL
-        success_redirect = f"{PAYMENT_SUCCESS_URL}?order_id={order_id}&payment_id={payment_id}"
-        failure_redirect = f"{PAYMENT_FAILURE_URL}?order_id={order_id}&payment_id={payment_id}"
+        # Ensure we have valid URLs even when environment variables aren't set
+        base_url = self.base_url or "https://example.com"
+        success_url = PAYMENT_SUCCESS_URL or "https://t.me/as_bolsyn_bot"
+        failure_url = PAYMENT_FAILURE_URL or "https://t.me/as_bolsyn_bot"
         
-        # Create a simulated payment URL
-        payment_url = f"{self.base_url}/pay?order_id={order_id}&amount={amount}&payment_id={payment_id}&success_url={success_redirect}&failure_url={failure_redirect}"
+        # Generate a simulated payment URL
+        success_redirect = f"{success_url}?order_id={order_id}&payment_id={payment_id}"
+        failure_redirect = f"{failure_url}?order_id={order_id}&payment_id={payment_id}"
+        
+        # Create a simulated payment URL with proper HTTP format
+        payment_url = f"{base_url}/pay?order_id={order_id}&amount={amount}&payment_id={payment_id}&success_url={success_redirect}&failure_url={failure_redirect}"
         
         # In a real implementation, the payment URL would be returned by the payment gateway
         return payment_id, payment_url

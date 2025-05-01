@@ -248,7 +248,16 @@ The payment integration is implemented using a flexible gateway approach:
    - System presents payment URL to user via Telegram inline button
    - User is redirected to the payment provider's page to complete payment
 
-3. **Payment Confirmation**
+3. **Payment URL Generation**
+   - Uses a resilient approach with fallback values for all configuration
+   - Ensures valid HTTP URLs even when environment variables are missing
+   - Includes order ID and amount in payment URL for tracking
+   - Provides success and failure redirect URLs back to the bot
+   - Uses URL validation to prevent Telegram API errors
+   - Configurable for different payment providers through environment variables
+   - Has sensible defaults for development and testing environments
+
+4. **Payment Confirmation**
    - Payment provider sends a webhook notification to the bot
    - System verifies the webhook signature for security
    - System retrieves the associated order using the payment ID
@@ -256,13 +265,13 @@ The payment integration is implemented using a flexible gateway approach:
    - System decreases the meal's available quantity
    - System sends confirmation notifications
 
-4. **Payment Simulation**
+5. **Payment Simulation**
    - For development and testing, the MVP includes a simulated payment flow
    - Simulated webhooks are generated automatically after a short delay
    - This allows testing the full payment flow without a live payment provider
    - Configuration options allow easy switching between simulation and real providers
 
-5. **Error Handling**
+6. **Error Handling**
    - System handles various error scenarios:
      - Meal no longer available
      - Insufficient quantity
@@ -270,6 +279,46 @@ The payment integration is implemented using a flexible gateway approach:
      - Webhook processing failures
    - Provides clear error messages to users
    - Logs detailed error information for debugging
+
+## Database Migration System
+
+The application includes a simple database migration system to handle schema evolution:
+
+1. **Schema Validation**
+   - When the application starts, it checks the database schema
+   - Verifies that required tables and columns exist
+   - Automatically adds missing columns when needed
+   - Preserves existing data during migrations
+
+2. **Testing Support**
+   - Uses in-memory SQLite for automated testing
+   - Provides fixture utilities to set up clean test environments
+   - Simulates environment variables needed for testing
+   - Prevents test isolation issues with automatic cleanup
+
+## Testing Architecture
+
+The application uses a comprehensive testing strategy:
+
+1. **Unit Tests**
+   - Test individual components in isolation
+   - Mock external dependencies for predictable results
+   - Cover critical path functionality like payment processing
+
+2. **Integration Tests**
+   - Test interactions between components 
+   - Verify database operations work correctly
+   - Test end-to-end flows like meal purchase and payment
+
+3. **Test Configuration**
+   - Uses pytest and pytest-asyncio for asynchronous testing
+   - Sets up appropriate test fixtures for database and payment testing
+   - Simulates environment variables for consistent test execution
+
+4. **Test Database**
+   - Uses in-memory SQLite for fast test execution
+   - Automatically creates required schema for each test
+   - Cleans up after tests to prevent state leakage
 
 ## Future Features
 

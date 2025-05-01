@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 from aiogram.types import User, Chat, Message, CallbackQuery
+import pytest_asyncio
 
 from src.models import Vendor, Consumer, Meal, Order, OrderStatus, VendorStatus
 from src.bot import process_buy_callback
@@ -24,7 +25,7 @@ def mock_payment_gateway():
         yield mock_gateway
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_data():
     """Create test data for integration tests"""
     consumer = await Consumer.create(telegram_id=12345)
