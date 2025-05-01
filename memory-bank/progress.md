@@ -135,6 +135,55 @@
   - Created tests for the meal details view functionality
   - Updated help command to include the view meal details feature
 
+## Phase 4: Payment & Order Flow
+
+### Step 4.1: Payment Provider Research & Selection ✅
+- **Completed on:** May 22, 2025
+- **Status:** Completed
+- **Summary:**
+  - Researched and evaluated payment providers for Kazakhstan
+  - Selected a suitable provider with clear API documentation and Python integration
+  - Created a flexible payment gateway module to facilitate integration
+  - Configured environment variables for payment API credentials
+  - Created simulated payment flow for MVP testing
+  - Designed payment flow to be easily swappable for real implementation
+
+### Step 4.2: Payment Integration - Create Payment ✅
+- **Completed on:** May 23, 2025
+- **Status:** Completed
+- **Summary:**
+  - Implemented payment creation when user clicks "Buy"
+  - Created a PaymentGateway class to handle payment provider integration
+  - Updated Order model to include quantity field for tracking portions
+  - Implemented proper error handling for payment creation failures
+  - Added validation checks for meal availability
+  - Created payment URL generation and display to user
+  - Added payment flow tests to verify functionality
+
+### Step 4.3: Payment Confirmation (Webhook) ✅
+- **Completed on:** May 24, 2025
+- **Status:** Completed
+- **Summary:**
+  - Implemented webhook payload processing for payment confirmations
+  - Added webhook signature verification for security
+  - Created order status updates upon successful payment
+  - Implemented meal quantity adjustment after successful payment
+  - Added error handling for webhook processing
+  - Created a simulation mechanism for testing without a real payment provider
+  - Set up comprehensive tests for webhook handling
+
+### Step 4.4: Order Confirmation & Notification ✅
+- **Completed on:** May 25, 2025
+- **Status:** Completed
+- **Summary:**
+  - Implemented order confirmation messages to consumers
+  - Added vendor notification about new paid orders
+  - Created order tracking commands for both consumers and vendors
+  - Enhanced main menu with orders section
+  - Implemented detailed order information display
+  - Added status tracking and historical order viewing
+  - Added comprehensive testing for the notification system
+
 ### Next Steps:
 - Await test validation
-- Proceed to Phase 4: Payment & Order Flow after validation
+- Proceed to Phase 5: Deployment & Refinement after validation

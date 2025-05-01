@@ -208,10 +208,84 @@ The consumer functionality is implemented with the following features:
    - User selects desired number of portions
    - System calculates and displays total price based on selected portions
    - System provides a "Buy" button for final purchase confirmation
-   - When user clicks the "Buy" button, system registers the action and shows a placeholder message (payment integration will be implemented in Phase 4)
 
-4. **Future Features**
-   - Placing orders
-   - Making payments
-   - Tracking order status
-   - Rating meals/vendors
+4. **Payment & Order Process**
+   - Consumer clicks "Buy" button after selecting portions
+   - System validates meal availability and portion quantity
+   - System creates a new Order record with status "pending"
+   - System calls the payment gateway to create a payment
+   - System displays payment link to user via inline button
+   - User completes payment through the payment gateway
+   - Payment gateway sends a webhook notification upon completion
+   - System processes the webhook and updates order status to "paid"
+   - System decreases the meal's available quantity
+   - System sends confirmation notifications to both consumer and vendor
+
+5. **Order Tracking**
+   - Consumer can view their order history using `/my_orders` command or the "My Orders" button
+   - System displays a list of all orders with their status and details
+   - Each order shows:
+     - Order ID
+     - Meal name
+     - Ordered quantity
+     - Order status (Pending, Paid, Completed, Cancelled)
+     - Order date/time
+
+## Payment Gateway Integration
+
+The payment integration is implemented using a flexible gateway approach:
+
+1. **Payment Gateway Module**
+   - Implemented as a separate module for clear separation of concerns
+   - Provides a common interface that can be adapted to different payment providers
+   - Handles payment creation, verification, and webhook processing
+   - For the MVP, includes a simulated payment flow for testing
+
+2. **Payment Creation Flow**
+   - When user confirms purchase, system creates a pending order
+   - System calls the payment gateway to generate a payment ID and URL
+   - System associates the payment ID with the order
+   - System presents payment URL to user via Telegram inline button
+   - User is redirected to the payment provider's page to complete payment
+
+3. **Payment Confirmation**
+   - Payment provider sends a webhook notification to the bot
+   - System verifies the webhook signature for security
+   - System retrieves the associated order using the payment ID
+   - System updates order status to "paid"
+   - System decreases the meal's available quantity
+   - System sends confirmation notifications
+
+4. **Payment Simulation**
+   - For development and testing, the MVP includes a simulated payment flow
+   - Simulated webhooks are generated automatically after a short delay
+   - This allows testing the full payment flow without a live payment provider
+   - Configuration options allow easy switching between simulation and real providers
+
+5. **Error Handling**
+   - System handles various error scenarios:
+     - Meal no longer available
+     - Insufficient quantity
+     - Payment gateway errors
+     - Webhook processing failures
+   - Provides clear error messages to users
+   - Logs detailed error information for debugging
+
+## Future Features
+
+Planned features for future phases include:
+
+1. **Rating System**
+   - Allow consumers to rate meals and vendors after pickup
+   - Display average ratings on meal listings
+   - Implement a feedback system for quality improvement
+
+2. **Enhanced Order Management**
+   - Add order status updates (preparing, ready for pickup, completed)
+   - Implement order cancellation with refund handling
+   - Add order reminders as pickup time approaches
+
+3. **Subscription Options**
+   - Allow consumers to subscribe to favorite vendors
+   - Send notifications when new meals are listed by subscribed vendors
+   - Implement loyalty rewards for repeat customers

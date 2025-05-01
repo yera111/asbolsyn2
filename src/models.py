@@ -73,6 +73,7 @@ class Order(Model):
     id = fields.IntField(pk=True)
     status = fields.CharEnumField(OrderStatus, default=OrderStatus.PENDING)
     payment_id = fields.CharField(max_length=255, null=True)
+    quantity = fields.IntField(default=1)  # Number of portions ordered
     created_at = fields.DatetimeField(auto_now_add=True)
     completed_at = fields.DatetimeField(null=True)
 

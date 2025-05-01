@@ -30,3 +30,12 @@ if TESTING:
 
 # Default language
 DEFAULT_LANGUAGE = "ru"
+
+# Payment Gateway configuration (for testing initially)
+PAYMENT_GATEWAY_ENABLED = os.getenv("PAYMENT_GATEWAY_ENABLED", "True").lower() in ["true", "1", "yes"]
+PAYMENT_GATEWAY_API_KEY = os.getenv("PAYMENT_GATEWAY_API_KEY", "test_api_key" if TESTING else None)
+PAYMENT_GATEWAY_SECRET = os.getenv("PAYMENT_GATEWAY_SECRET", "test_secret" if TESTING else None)
+PAYMENT_GATEWAY_URL = os.getenv("PAYMENT_GATEWAY_URL", "https://test-payment.kz" if TESTING else None)
+PAYMENT_WEBHOOK_SECRET = os.getenv("PAYMENT_WEBHOOK_SECRET", "webhook_secret" if TESTING else None)
+PAYMENT_SUCCESS_URL = os.getenv("PAYMENT_SUCCESS_URL", "https://t.me/as_bolsyn_bot" if TESTING else None)
+PAYMENT_FAILURE_URL = os.getenv("PAYMENT_FAILURE_URL", "https://t.me/as_bolsyn_bot" if TESTING else None)

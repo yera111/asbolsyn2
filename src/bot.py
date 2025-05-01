@@ -12,7 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from .config import BOT_TOKEN, ADMIN_CHAT_ID
 from .db import init_db, close_db
-from .models import Consumer, Vendor, VendorStatus, Meal
+from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +25,7 @@ dp = Dispatcher(storage=storage)
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal <id> - Посмотреть детали блюда",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal <id> - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -70,7 +70,14 @@ TEXT = {
     "meal_id_invalid": "Неверный ID блюда. Пожалуйста, используйте числовой ID.",
     "select_portions": "Выберите количество порций для заказа:",
     "portion_selection": "Вы выбрали {count} порций блюда \"{name}\".\nОбщая стоимость: {total_price} тенге.",
-    "view_meal_button": "Посмотреть"
+    "view_meal_button": "Посмотреть",
+    "order_created": "Заказ #{order_id} создан. Пожалуйста, перейдите по ссылке для оплаты.",
+    "payment_pending": "После успешной оплаты вы получите подтверждение. Если вы не получили подтверждение в течение 5 минут, пожалуйста, свяжитесь с поддержкой.",
+    "order_confirmed": "✅ Заказ #{order_id} успешно оплачен!\n\nДетали заказа:\n- Блюдо: {meal_name}\n- Количество порций: {quantity}\n- Поставщик: {vendor_name}\n- Адрес самовывоза: {address}\n- Время самовывоза: с {pickup_start} до {pickup_end}\n\nПожалуйста, сохраните номер заказа #{order_id} для предъявления поставщику при получении.",
+    "vendor_notification": "🔔 Новый оплаченный заказ #{order_id}!\n\nДетали заказа:\n- Блюдо: {meal_name}\n- Количество порций: {quantity}\n- Время самовывоза: с {pickup_start} до {pickup_end}\n\nПожалуйста, подготовьте заказ к указанному времени самовывоза.",
+    "payment_failed": "❌ Оплата заказа #{order_id} не удалась. Пожалуйста, попробуйте еще раз или выберите другое блюдо.",
+    "my_orders_empty": "У вас пока нет заказов. Начните с просмотра доступных блюд.",
+    "vendor_orders_empty": "У вас пока нет заказов на ваши блюда.",
 }
 
 
@@ -102,13 +109,19 @@ class PortionSelection(StatesGroup):
     waiting_for_quantity = State()
 
 
+# Define state for order tracking
+class OrderTracking(StatesGroup):
+    waiting_for_order_id = State()
+
+
 # Helper function to get the main menu keyboard
 def get_main_keyboard():
-    """Returns the main menu keyboard markup"""
+    """Returns the main menu keyboard markup with additional orders button"""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📋 Просмотреть блюда"), KeyboardButton(text="📍 Блюда поблизости")],
-            [KeyboardButton(text="🏪 Зарегистрироваться как поставщик"), KeyboardButton(text="❓ Помощь")]
+            [KeyboardButton(text="🛒 Мои заказы"), KeyboardButton(text="🏪 Зарегистрироваться как поставщик")],
+            [KeyboardButton(text="❓ Помощь")]
         ],
         resize_keyboard=True
     )
@@ -730,17 +743,84 @@ async def callback_select_portions(callback_query: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
 async def process_buy_callback(callback_query: CallbackQuery):
-    """Handler for buy meal button callback"""
+    """Handler for buy meal button callback - Initiates the payment process"""
+    user_id = callback_query.from_user.id
+    
     # Extract meal ID and portions from callback data
     parts = callback_query.data.split(':')
     meal_id = int(parts[1])
     portions = int(parts[2]) if len(parts) > 2 else 1
     
-    # This is a placeholder for the actual payment flow to be implemented in Step 4
-    await callback_query.answer("Функциональность покупки будет доступна в ближайшее время!")
-    
-    # Optional: Display a message to inform user that the complete payment flow is coming soon
-    await callback_query.message.answer(f"Полный процесс покупки {portions} порций будет реализован в ближайшее время. Спасибо за интерес!", reply_markup=get_main_keyboard())
+    try:
+        # Get the meal from the database
+        meal = await Meal.filter(id=meal_id, is_active=True).prefetch_related('vendor').first()
+        
+        if not meal:
+            await callback_query.answer("Блюдо не найдено или недоступно.")
+            return
+            
+        if meal.quantity < portions:
+            await callback_query.answer(f"Недостаточно порций. Доступно: {meal.quantity}.")
+            return
+            
+        # Get or create consumer
+        consumer, created = await Consumer.get_or_create(telegram_id=user_id)
+        
+        # Calculate total price
+        total_price = meal.price * portions
+        
+        # Create a new order
+        order = await Order.create(
+            consumer=consumer,
+            meal=meal,
+            status=OrderStatus.PENDING,
+            quantity=portions
+        )
+        
+        # Import the payment gateway here to avoid circular imports
+        from .payment import payment_gateway
+        
+        # Create payment
+        payment_id, payment_url = await payment_gateway.create_payment(
+            order_id=order.id,
+            amount=total_price,
+            description=f"Оплата за {portions} порций '{meal.name}'"
+        )
+        
+        if not payment_id or not payment_url:
+            await callback_query.answer("Не удалось создать платеж. Пожалуйста, попробуйте позже.")
+            return
+            
+        # Save payment ID to order
+        order.payment_id = payment_id
+        await order.save()
+        
+        # Create inline keyboard with payment link
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="Перейти к оплате", url=payment_url)]
+        ])
+        
+        # Notify the user
+        await callback_query.message.answer(
+            f"Заказ #{order.id} создан. Пожалуйста, перейдите по ссылке для оплаты {portions} порций '{meal.name}' на сумму {total_price} тенге.",
+            reply_markup=keyboard
+        )
+        
+        # Add instruction about webhook confirmation
+        await callback_query.message.answer(
+            "После успешной оплаты вы получите подтверждение. Если вы не получили подтверждение в течение 5 минут, пожалуйста, свяжитесь с поддержкой.",
+            reply_markup=get_main_keyboard()
+        )
+        
+        # For the MVP, we'll automatically simulate a successful payment after a delay
+        # In a real implementation, this would be handled by the webhook
+        asyncio.create_task(simulate_payment_webhook(order.id, payment_id))
+        
+        await callback_query.answer()
+        
+    except Exception as e:
+        logging.error(f"Error creating order: {e}")
+        await callback_query.answer("Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже.")
 
 
 # Handle text button presses
@@ -926,6 +1006,221 @@ async def button_register_vendor(message: Message, state: FSMContext):
 async def button_help(message: Message):
     """Handler for help button"""
     await cmd_help(message)
+
+
+# Payment simulation for testing 
+async def simulate_payment_webhook(order_id, payment_id):
+    """
+    Simulates a payment webhook notification with a successful payment.
+    This is only for demo/testing purposes in the MVP.
+    In a real implementation, a webhook endpoint would receive notifications from the payment gateway.
+    """
+    try:
+        # Wait a few seconds to simulate the payment process
+        await asyncio.sleep(5)
+        
+        # Simulate webhook payload
+        webhook_data = {
+            "payment_id": payment_id,
+            "order_id": order_id,
+            "status": "completed",
+            "amount": "0.00",  # Not used in processing
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+        # Import the payment gateway to avoid circular imports
+        from .payment import payment_gateway
+        
+        # Process the simulated webhook
+        success = await payment_gateway.process_webhook(webhook_data)
+        
+        if success:
+            # Notify the user and vendor about the successful payment
+            await send_order_notifications(order_id)
+            
+    except Exception as e:
+        logging.error(f"Error simulating payment webhook: {e}")
+
+
+async def send_order_notifications(order_id):
+    """Send notifications to both consumer and vendor about a successful order."""
+    try:
+        # Get the order with related models
+        order = await Order.filter(id=order_id).prefetch_related('consumer', 'meal', 'meal__vendor').first()
+        
+        if not order or order.status != OrderStatus.PAID:
+            logging.error(f"Order not found or not paid: {order_id}")
+            return
+            
+        # Get details
+        consumer = await order.consumer
+        meal = await order.meal
+        vendor = await meal.vendor
+        
+        # Generate a unique order identifier for both parties to reference
+        order_ref = f"#{order.id}"
+        
+        # Calculate pickup window
+        pickup_start = meal.pickup_start_time.strftime('%H:%M')
+        pickup_end = meal.pickup_end_time.strftime('%H:%M')
+        
+        # Notify the consumer
+        consumer_message = (
+            f"✅ Заказ {order_ref} успешно оплачен!\n\n"
+            f"Детали заказа:\n"
+            f"- Блюдо: {meal.name}\n"
+            f"- Количество порций: {order.quantity}\n"
+            f"- Поставщик: {vendor.name}\n"
+            f"- Адрес самовывоза: {meal.location_address}\n"
+            f"- Время самовывоза: с {pickup_start} до {pickup_end}\n\n"
+            f"Пожалуйста, сохраните номер заказа {order_ref} для предъявления поставщику при получении."
+        )
+        
+        await bot.send_message(chat_id=consumer.telegram_id, text=consumer_message, reply_markup=get_main_keyboard())
+        
+        # Notify the vendor
+        vendor_message = (
+            f"🔔 Новый оплаченный заказ {order_ref}!\n\n"
+            f"Детали заказа:\n"
+            f"- Блюдо: {meal.name}\n"
+            f"- Количество порций: {order.quantity}\n"
+            f"- Время самовывоза: с {pickup_start} до {pickup_end}\n\n"
+            f"Пожалуйста, подготовьте заказ к указанному времени самовывоза."
+        )
+        
+        await bot.send_message(chat_id=vendor.telegram_id, text=vendor_message)
+        
+    except Exception as e:
+        logging.error(f"Error sending order notifications: {e}")
+
+
+# API handler for real payment gateway webhooks
+async def process_payment_webhook(webhook_data, signature=None):
+    """
+    Process a webhook notification from the payment gateway.
+    This function would be called from a web framework route handler in a real deployment.
+    
+    Args:
+        webhook_data: The webhook payload as a dictionary
+        signature: Optional webhook signature for verification
+        
+    Returns:
+        bool: True if processing succeeded, False otherwise
+    """
+    try:
+        # Import the payment gateway to avoid circular imports
+        from .payment import payment_gateway
+        
+        # Process the webhook
+        success = await payment_gateway.process_webhook(webhook_data)
+        
+        if success and webhook_data.get("status") == "completed":
+            # Send notifications about the successful payment
+            order_id = webhook_data.get("order_id")
+            if order_id:
+                await send_order_notifications(order_id)
+                
+        return success
+        
+    except Exception as e:
+        logging.error(f"Error processing webhook: {e}")
+        return False
+
+
+@dp.message(Command("my_orders"))
+async def cmd_my_orders(message: Message):
+    """Handler for /my_orders command - Shows user's order history"""
+    user_id = message.from_user.id
+    
+    # Check if the user is a registered consumer
+    consumer = await Consumer.filter(telegram_id=user_id).first()
+    if not consumer:
+        await message.answer("У вас пока нет заказов. Начните с просмотра доступных блюд.", reply_markup=get_main_keyboard())
+        return
+        
+    # Get all orders for the consumer
+    orders = await Order.filter(consumer=consumer).prefetch_related('meal', 'meal__vendor').order_by('-created_at')
+    
+    if not orders:
+        await message.answer("У вас пока нет заказов. Начните с просмотра доступных блюд.", reply_markup=get_main_keyboard())
+        return
+        
+    # Display orders
+    response = "Ваши заказы:\n\n"
+    
+    for order in orders:
+        meal = await order.meal
+        status_text = {
+            OrderStatus.PENDING: "В обработке",
+            OrderStatus.PAID: "Оплачен",
+            OrderStatus.COMPLETED: "Выполнен",
+            OrderStatus.CANCELLED: "Отменен"
+        }.get(order.status, "Неизвестно")
+        
+        response += (
+            f"Заказ #{order.id}\n"
+            f"Блюдо: {meal.name}\n"
+            f"Количество: {order.quantity} порций\n"
+            f"Статус: {status_text}\n"
+            f"Дата: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        )
+    
+    await message.answer(response, reply_markup=get_main_keyboard())
+
+
+@dp.message(Command("vendor_orders"))
+async def cmd_vendor_orders(message: Message):
+    """Handler for /vendor_orders command - Shows vendor's order history"""
+    user_id = message.from_user.id
+    
+    # Check if the user is a registered and approved vendor
+    vendor = await Vendor.filter(telegram_id=user_id, status=VendorStatus.APPROVED).first()
+    if not vendor:
+        await message.answer("Эта команда доступна только для одобренных поставщиков.", reply_markup=get_main_keyboard())
+        return
+        
+    # Get all the vendor's meals
+    vendor_meals = await Meal.filter(vendor=vendor).values_list('id', flat=True)
+    
+    if not vendor_meals:
+        await message.answer("У вас пока нет активных блюд и заказов.", reply_markup=get_main_keyboard())
+        return
+    
+    # Get orders for the vendor's meals
+    orders = await Order.filter(meal_id__in=vendor_meals).prefetch_related('meal', 'consumer').order_by('-created_at')
+    
+    if not orders:
+        await message.answer("У вас пока нет заказов на ваши блюда.", reply_markup=get_main_keyboard())
+        return
+        
+    # Display orders
+    response = "Заказы на ваши блюда:\n\n"
+    
+    for order in orders:
+        meal = await order.meal
+        status_text = {
+            OrderStatus.PENDING: "В обработке",
+            OrderStatus.PAID: "Оплачен",
+            OrderStatus.COMPLETED: "Выполнен",
+            OrderStatus.CANCELLED: "Отменен"
+        }.get(order.status, "Неизвестно")
+        
+        response += (
+            f"Заказ #{order.id}\n"
+            f"Блюдо: {meal.name}\n"
+            f"Количество: {order.quantity} порций\n"
+            f"Статус: {status_text}\n"
+            f"Дата: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        )
+    
+    await message.answer(response, reply_markup=get_main_keyboard())
+
+
+# Add handler for the new orders button
+@dp.message(lambda message: message.text == "🛒 Мои заказы")
+async def button_my_orders(message: Message):
+    """Handler for my orders button"""
+    await cmd_my_orders(message)
 
 
 async def main():
