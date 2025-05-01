@@ -208,6 +208,16 @@
   - Enhanced URL validation to prevent Telegram API errors
   - Added more detailed logging for payment URL generation
 
+### Step 4.7: Vendor Order Completion Confirmation ✅
+- **Completed on:** June 12, 2025
+- **Status:** Completed
+- **Summary:**
+- Implemented the `/complete_order <id>` command for vendors.
+- Added validation of order ownership and `PAID` status.
+- The order is transferred to the `COMPLETED` status, `completed_at` is recorded.
+- The buyer receives a notification about confirmed receipt of the order.
+- Updated tests for the new scenario.
+
 ### Next Steps:
 - Await test validation
 - Proceed to Phase 5: Deployment & Refinement after validation

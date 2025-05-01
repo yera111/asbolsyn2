@@ -333,6 +333,9 @@ Planned features for future phases include:
    - Add order status updates (preparing, ready for pickup, completed)
    - Implement order cancellation with refund handling
    - Add order reminders as pickup time approaches
+   - Confirmation of meal pickup
+      Approved suppliers can confirm the fact of receipt of the order by the buyer with the command
+      /complete_order <id>. The bot checks the order ownership, that the status = PAID, then transfers it to COMPLETED, fills in completed_at and sends notifications to the supplier and the buyer.
 
 3. **Subscription Options**
    - Allow consumers to subscribe to favorite vendors
