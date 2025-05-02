@@ -557,6 +557,7 @@ The application includes a comprehensive metrics system to track key performance
      - Transaction metrics (sales per day)
    - Time-based filtering allows for period comparisons
    - Custom metric type filtering for targeted analysis
+   - Timezone-aware date handling for accurate period-based reporting
 
 5. **Dashboard for Administrators**
    - Admin-only `/metrics` command provides real-time access to key metrics
@@ -564,6 +565,8 @@ The application includes a comprehensive metrics system to track key performance
    - Weekly conversion rates to identify funnel bottlenecks
    - Aggregated statistics on users, vendors, meals, and orders
    - Gross Merchandise Value (GMV) calculation
+   - Consistent definition of "active meals" that matches the browse view (is_active=True, quantity>0, pickup_end_time in the future)
+   - Proper timezone handling ensures metrics are calculated for the correct time periods
 
 6. **Strategic Metrics Alignment**
    The metrics system is designed to answer key business questions from the [Game Design Document](game-design-document.md):
@@ -582,7 +585,14 @@ The application includes a comprehensive metrics system to track key performance
    - Throughout the order and payment process
    - During special interactions like nearby search
 
-8. **Future Extensions**
+8. **Timezone Considerations**
+   - All date calculations in metrics use the Almaty timezone (UTC+6)
+   - Date ranges are properly timezone-aware to ensure accurate reporting
+   - Dashboard data is generated using timezone-consistent queries
+   - Metrics filtering ensures all timestamps are compared in the same timezone
+   - Time-period based analysis accounts for timezone differences
+
+9. **Future Extensions**
    The metrics system is designed for extensibility:
    - Additional metric types can be easily added
    - The reporting system can accommodate new analysis requirements

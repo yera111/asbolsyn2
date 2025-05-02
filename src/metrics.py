@@ -7,6 +7,7 @@ from tortoise.functions import Count, Sum, Avg
 from tortoise.expressions import Q
 
 from .models import Metric, MetricType, Meal, Order, OrderStatus, Vendor, VendorStatus
+from .config import ALMATY_TIMEZONE
 
 
 logger = logging.getLogger(__name__)
@@ -66,9 +67,16 @@ async def get_metrics_report(
     """
     # Set default date range if not provided
     if not end_date:
-        end_date = datetime.now()
+        end_date = datetime.now(ALMATY_TIMEZONE)
+    elif end_date.tzinfo is None:
+        # Make timezone-aware if it's not already
+        end_date = end_date.replace(tzinfo=ALMATY_TIMEZONE)
+        
     if not start_date:
         start_date = end_date - timedelta(days=30)
+    elif start_date.tzinfo is None:
+        # Make timezone-aware if it's not already
+        start_date = start_date.replace(tzinfo=ALMATY_TIMEZONE)
     
     # Create base query with date filtering
     base_query = Q(timestamp__gte=start_date) & Q(timestamp__lte=end_date)
@@ -231,12 +239,15 @@ async def get_metrics_dashboard_data() -> Dict:
         Dictionary with key metrics for dashboard display
     """
     try:
+        # Get current time in Almaty timezone
+        current_time = datetime.now(ALMATY_TIMEZONE)
+        
         # Get counts
         total_users = await Metric.filter(metric_type=MetricType.USER_REGISTRATION).count()
         total_vendors = await Vendor.all().count()
         approved_vendors = await Vendor.filter(status=VendorStatus.APPROVED).count()
         total_meals = await Meal.all().count()
-        active_meals = await Meal.filter(is_active=True).count()
+        active_meals = await Meal.filter(is_active=True, quantity__gt=0, pickup_end_time__gt=current_time).count()
         total_orders = await Order.all().count()
         paid_orders = await Order.filter(status=OrderStatus.PAID).count()
         completed_orders = await Order.filter(status=OrderStatus.COMPLETED).count()
@@ -248,7 +259,7 @@ async def get_metrics_dashboard_data() -> Dict:
             gmv += float(order.meal.price) * order.quantity
         
         # Get 7-day metrics
-        week_ago = datetime.now() - timedelta(days=7)
+        week_ago = datetime.now(ALMATY_TIMEZONE) - timedelta(days=7)
         week_metrics = await get_metrics_report(start_date=week_ago)
         
         # Prepare dashboard data

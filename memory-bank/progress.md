@@ -370,3 +370,28 @@
   - Verified that location sharing and nearby meal search now works correctly
   - Enhanced the reliability of the location-based search feature
   - Improved user experience by ensuring stable operation of the proximity search
+
+### Step 7.4: Metrics Dashboard Fix for Active Meals Count ✅
+- **Completed on:** June 25, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed a discrepancy in the metrics dashboard where "Активных блюд" count didn't match meals shown in browse view
+  - Updated `get_metrics_dashboard_data()` function in metrics.py to apply the same filters used in the browse meals command
+  - Added filtering for active meals to include only those with quantity > 0 and pickup_end_time in the future
+  - Ensured consistent definition of "active meal" across the application
+  - Resolved confusion where metrics showed active meals that weren't visible to users
+  - Aligned the metrics dashboard with the actual user-facing meal availability
+  - Enhanced accuracy of the dashboard for administrators
+
+### Step 7.5: Metrics System Timezone Bug Fix ✅
+- **Completed on:** June 26, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical bug in metrics system where all metrics were showing zero values
+  - Added missing import for ALMATY_TIMEZONE in metrics.py
+  - Updated datetime handling in metrics functions to use proper timezone-aware dates
+  - Fixed timezone handling in get_metrics_report for consistent date filtering
+  - Ensured all date queries use the same timezone across the application
+  - Updated week_ago calculation in dashboard data to use the correct timezone
+  - Verified that metrics now display correct values in the admin dashboard
+  - Resolved the issue where metrics were being missed due to timezone mismatches in queries
