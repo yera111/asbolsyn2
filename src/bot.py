@@ -11,11 +11,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from .config import BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE
+from .config import BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE, RATE_LIMIT_GENERAL, RATE_LIMIT_REGISTER, RATE_LIMIT_ADD_MEAL, RATE_LIMIT_PAYMENT
 from .db import init_db, close_db
 from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus, Metric, MetricType
 from .tasks import scheduled_tasks
 from .metrics import track_metric, get_metrics_report, get_metrics_dashboard_data
+from .security import rate_limit
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -167,6 +168,7 @@ def get_main_keyboard():
 
 
 @dp.message(Command("start"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="start_command")
 async def cmd_start(message: Message):
     """Handler for /start command"""
     # Register user if not already registered
@@ -197,12 +199,14 @@ async def cmd_start(message: Message):
 
 
 @dp.message(Command("help"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="help_command")
 async def cmd_help(message: Message):
     """Handler for /help command"""
     await message.answer(TEXT["help"], reply_markup=get_main_keyboard())
 
 
 @dp.message(Command("register_vendor"))
+@rate_limit(limit=RATE_LIMIT_REGISTER, period=60, key="register_vendor_command")
 async def cmd_register_vendor(message: Message, state: FSMContext):
     """Handler to start vendor registration process"""
     user_id = message.from_user.id
@@ -368,6 +372,7 @@ async def cmd_reject_vendor(message: Message):
 
 
 @dp.message(Command("add_meal"))
+@rate_limit(limit=RATE_LIMIT_ADD_MEAL, period=60, key="add_meal_command")
 async def cmd_add_meal(message: Message, state: FSMContext):
     """Handler to start meal creation process"""
     user_id = message.from_user.id
@@ -632,6 +637,7 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
 
 
 @dp.message(Command("my_meals"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="my_meals_command")
 async def cmd_my_meals(message: Message):
     """Handler to view vendor's meals"""
     user_id = message.from_user.id
@@ -670,6 +676,7 @@ async def cmd_my_meals(message: Message):
 
 
 @dp.message(Command("delete_meal"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="delete_meal_command")
 async def cmd_delete_meal(message: Message):
     """Handler for vendor to delete a meal"""
     user_id = message.from_user.id
@@ -708,6 +715,7 @@ async def cmd_delete_meal(message: Message):
 
 
 @dp.message(Command("browse_meals"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="browse_meals_command")
 async def cmd_browse_meals(message: Message):
     """Handler for /browse_meals command"""
     user_id = message.from_user.id
@@ -886,6 +894,7 @@ async def callback_select_portions(callback_query: CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
+@rate_limit(limit=RATE_LIMIT_PAYMENT, period=60, key="buy_meal_callback")
 async def process_buy_callback(callback_query: CallbackQuery):
     """Handler for Buy button callback"""
     # Parse callback data
@@ -964,6 +973,7 @@ async def process_buy_callback(callback_query: CallbackQuery):
 
 
 @dp.message(Command("meals_nearby"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="meals_nearby_command")
 async def cmd_meals_nearby(message: Message, state: FSMContext):
     """Handler for /meals_nearby command - Shows nearby meals"""
     user_id = message.from_user.id
@@ -1114,6 +1124,7 @@ async def process_meals_nearby(message: Message, state: FSMContext):
 
 
 @dp.message(Command("view_meal"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="view_meal_command")
 async def cmd_view_meal(message: Message):
     """Handler for /view_meal command - Shows detailed meal information"""
     user_id = message.from_user.id
@@ -1144,18 +1155,21 @@ async def cmd_view_meal(message: Message):
 
 
 @dp.message(lambda message: message.text == "📍 Блюда поблизости")
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="meals_nearby_button")
 async def button_meals_nearby(message: Message, state: FSMContext):
     """Handler for meals nearby button"""
     await cmd_meals_nearby(message, state)
 
 
 @dp.message(lambda message: message.text == "🏪 Зарегистрироваться как поставщик")
+@rate_limit(limit=RATE_LIMIT_REGISTER, period=60, key="register_vendor_button")
 async def button_register_vendor(message: Message, state: FSMContext):
     """Handler for register vendor button"""
     await cmd_register_vendor(message, state)
 
 
 @dp.message(lambda message: message.text == "❓ Помощь")
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="help_button")
 async def button_help(message: Message):
     """Handler for help button"""
     await cmd_help(message)
@@ -1298,6 +1312,7 @@ async def process_payment_webhook(webhook_data, signature=None):
 
 
 @dp.message(Command("my_orders"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="my_orders_command")
 async def cmd_my_orders(message: Message):
     """Handler for /my_orders command - Shows user's order history"""
     user_id = message.from_user.id
@@ -1339,6 +1354,7 @@ async def cmd_my_orders(message: Message):
 
 
 @dp.message(Command("vendor_orders"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="vendor_orders_command")
 async def cmd_vendor_orders(message: Message):
     """Handler for /vendor_orders command - Shows vendor's order history"""
     user_id = message.from_user.id
@@ -1389,6 +1405,7 @@ async def cmd_vendor_orders(message: Message):
 # /complete_order – поставщик подтверждает, что покупатель забрал заказ
 # ---------------------------------------------------------------------------
 @dp.message(Command("complete_order"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="complete_order_command")
 async def cmd_complete_order(message: Message):
     """Handler for vendor to complete an order"""
     user_id = message.from_user.id
@@ -1475,6 +1492,7 @@ async def cmd_complete_order(message: Message):
 
 # Add a new command for viewing metrics (admin only)
 @dp.message(Command("metrics"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="metrics_command")
 async def cmd_metrics(message: Message):
     """Handler for admin to view metrics dashboard"""
     user_id = message.from_user.id
@@ -1545,12 +1563,14 @@ async def cmd_metrics(message: Message):
 
 
 @dp.message(lambda message: message.text == "📋 Просмотреть блюда")
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="browse_meals_button")
 async def button_browse_meals(message: Message):
     """Handler for browse meals button"""
     await cmd_browse_meals(message)
 
 
 @dp.message(lambda message: message.text == "🛒 Мои заказы")
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="my_orders_button")
 async def button_my_orders(message: Message):
     """Handler for my orders button"""
     await cmd_my_orders(message)

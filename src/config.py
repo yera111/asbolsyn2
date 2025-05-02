@@ -16,6 +16,18 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")  # for listen on all interfaces
 WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", os.getenv("PORT", "8000")))  # Default port that most PaaS use
 
+# SSL Configuration for secure webhook
+USE_SSL = os.getenv("USE_SSL", "False").lower() in ["true", "1", "yes"]
+SSL_CERT_PATH = os.getenv("SSL_CERT_PATH", "")
+SSL_KEY_PATH = os.getenv("SSL_KEY_PATH", "")
+
+# Security Configuration
+RATE_LIMIT_GENERAL = int(os.getenv("RATE_LIMIT_GENERAL", "20"))  # Requests per minute
+RATE_LIMIT_REGISTER = int(os.getenv("RATE_LIMIT_REGISTER", "2"))  # Registration attempts per minute
+RATE_LIMIT_ADD_MEAL = int(os.getenv("RATE_LIMIT_ADD_MEAL", "5"))  # Meal additions per minute
+RATE_LIMIT_PAYMENT = int(os.getenv("RATE_LIMIT_PAYMENT", "3"))  # Payment attempts per minute
+WEBHOOK_RATE_LIMIT = int(os.getenv("WEBHOOK_RATE_LIMIT", "30"))  # Webhook requests per 10 seconds
+
 # Bot configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "test_token" if TESTING else None)
 if not BOT_TOKEN and not TESTING:

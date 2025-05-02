@@ -526,6 +526,104 @@ The application implements automatic management of expired meals:
    - All expiration checks consider the Almaty timezone
    - Consistent filtering throughout the application
 
+## Security Architecture
+
+The application implements comprehensive security measures to protect against common threats:
+
+1. **Rate Limiting System**
+   - **User-Based Rate Limiting**
+     - Configurable limits for different command types:
+       - General commands (browse, view) limited to 5 requests per minute
+       - Registration commands limited to 2 attempts per minute
+       - Meal creation limited to 5 attempts per minute
+       - Payment operations limited to 3 attempts per minute
+     - Prevents command spamming and brute force attempts
+     - Implemented as function decorators for easy application to handlers
+     - Custom error messages inform users about rate limits
+     - Tracking of frequent offenders for temporary banning
+
+   - **IP-Based Rate Limiting (Webhook)**
+     - Prevents DDOS attacks through webhook endpoints
+     - Blocks IPs sending more than 30 requests in 10 seconds
+     - Protects both Telegram and payment webhook endpoints
+     - Background task periodically cleans up tracking data
+
+2. **Anti-Spam Filtering**
+   - Message content analysis to detect spam patterns:
+     - Excessive URL detection
+     - Message length limitations
+     - Repetitive pattern detection
+   - Blocks spam messages from being processed
+   - Prevents spam propagation through the bot
+   - Configurable thresholds for different spam indicators
+
+3. **CORS Security**
+   - Configures Cross-Origin Resource Sharing (CORS) policies
+   - Restricts allowed HTTP methods to POST for webhook endpoints
+   - Sets appropriate headers for secure cross-origin requests
+   - Prevents cross-site request forgery attacks
+
+4. **SSL Implementation**
+   - Optional SSL encryption for webhook endpoints
+   - Configurable through environment variables:
+     - `USE_SSL`: Enable/disable SSL
+     - `SSL_CERT_PATH`: Path to SSL certificate file
+     - `SSL_KEY_PATH`: Path to SSL private key file
+   - Ensures secure communication with webhook endpoints
+   - Protects sensitive data in transit
+   - Configurable for different deployment environments
+
+5. **Memory Management**
+   - Periodic cleanup of security data to prevent memory leaks:
+     - Hourly cleanup of rate limiting tracking data
+     - Daily reset of command usage counters
+     - Automatic clearing of expired IP tracking data
+   - Background task runs asynchronously without affecting main application flow
+   - Efficient data structures minimize memory footprint
+   - Ensures sustainable long-term operation
+
+6. **Security Middleware**
+   - AIOHTTP middleware intercepts all incoming requests:
+     - Checks for rate limiting violations
+     - Analyzes request properties for suspicious patterns
+     - Validates content length to prevent oversized payloads
+   - Integrates with the webhook handler pipeline
+   - Rejects suspicious requests before significant processing
+   - Logs security events for analysis and monitoring
+
+7. **Telegram API Security**
+   - Leverages Telegram Bot API's built-in security features:
+     - Token-based authentication
+     - Secure webhook communication
+     - Protection against impersonation
+   - Implements additional validation of incoming updates
+   - Verifies message sources and authenticity
+   - Utilizes Telegram's rate limiting mechanisms
+
+8. **Payment Security**
+   - Webhook signature verification for payment notifications
+   - Validates authenticity of payment confirmation messages
+   - Secure handling of payment credentials
+   - Protection against replay attacks
+   - Environment variable storage of sensitive payment gateway parameters
+
+9. **Logging & Monitoring**
+   - Enhanced logging for security events:
+     - Rate limit violations
+     - Suspected DDOS attempts
+     - Spam detection
+     - Authentication failures
+   - Real-time monitoring of suspicious activities
+   - Alerts for potential security threats
+   - Detailed tracking for security investigation
+
+10. **Configuration Management**
+    - Security parameters stored as environment variables
+    - Configurable rate limits for different operation types
+    - Adjustable thresholds for security measures
+    - Easy adaptation to different threat levels
+    - Separation of development and production security settings
+
 ## Metrics & Analytics System
 
 The application includes a comprehensive metrics system to track key performance indicators (KPIs) and evaluate the success of the MVP hypothesis:
