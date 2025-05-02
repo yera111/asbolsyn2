@@ -386,9 +386,11 @@ The application is designed to be deployed to a Platform-as-a-Service (PaaS) pro
 
 1. **Web Service**
    - Deployed as a web service on a PaaS platform (e.g., Render)
-   - Supports both development (polling) and production (webhook) modes
-   - Uses gunicorn as a production-ready WSGI server
-   - Handles payment gateway webhooks for transaction confirmation
+   - Uses an ASGI server (uvicorn) for optimal async performance
+   - Configured with 2 workers to handle concurrent requests efficiently
+   - Direct connection between uvicorn and the aiohttp application for reduced latency
+   - Handles both Telegram and payment gateway webhooks efficiently
+   - Optimized for the asynchronous nature of aiogram 3.x
 
 2. **Database Service**
    - Uses PostgreSQL as a managed database service
@@ -431,7 +433,8 @@ The deployment workflow follows these steps:
 3. **Deployment Process**
    - Automatic deployment from GitHub repository
    - Build process installs dependencies from requirements.txt
-   - Application starts using gunicorn and the wsgi.py entry point
+   - Application starts using uvicorn with src.main:app as the entry point
+   - Multiple workers (2) for improved concurrency and reliability
    - Webhook automatically configured on application startup
 
 4. **Monitoring & Maintenance**

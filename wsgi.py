@@ -1,5 +1,12 @@
 """
-WSGI entry point for Gunicorn to use in production.
+WSGI entry point - DEPRECATED, kept for backward compatibility.
+
+NOTE: This project now uses ASGI with uvicorn directly accessing src.main:app.
+This file is maintained for backward compatibility but is no longer used
+in the production deployment, which uses:
+    uvicorn src.main:app --host 0.0.0.0 --port $PORT --workers 2
+
+For new deployments, please use the ASGI approach.
 """
 
 # Import the app from src.main

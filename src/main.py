@@ -15,6 +15,9 @@ from .bot import dp, bot, process_payment_webhook
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Create web application for ASGI servers to use
+app = web.Application()
+
 # Setup webhook payment route
 async def handle_payment_webhook(request):
     """
@@ -62,6 +65,28 @@ async def on_shutdown(bot: Bot):
     await close_db()
 
 
+# Configure the app for ASGI
+if WEBHOOK_MODE:
+    # Setup webhook payment endpoint
+    app.router.add_post('/payment-webhook', handle_payment_webhook)
+    
+    # Set up the webhook handler
+    webhook_requests_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    )
+    webhook_requests_handler.register(app, path=WEBHOOK_PATH)
+    
+    # Set up startup and shutdown callbacks for the web app
+    setup_application(app, dp, bot=bot)
+    
+    # Register startup callback
+    app.on_startup.append(lambda app: on_startup(bot, WEBHOOK_URL))
+    
+    # Register shutdown callback
+    app.on_shutdown.append(lambda app: on_shutdown(bot))
+
+
 async def main():
     """Main function to run the bot"""
     # Set up dispatcher and include the webhook setup params
@@ -69,22 +94,6 @@ async def main():
     
     try:
         if WEBHOOK_MODE:
-            # Create web application
-            app = web.Application()
-            
-            # Setup webhook payment endpoint
-            app.router.add_post('/payment-webhook', handle_payment_webhook)
-            
-            # Set up the webhook handler
-            webhook_requests_handler = SimpleRequestHandler(
-                dispatcher=dispatcher,
-                bot=bot,
-            )
-            webhook_requests_handler.register(app, path=WEBHOOK_PATH)
-            
-            # Set up startup and shutdown callbacks for the web app
-            setup_application(app, dispatcher, bot=bot)
-            
             # Startup tasks
             await on_startup(bot, WEBHOOK_URL)
             

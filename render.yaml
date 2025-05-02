@@ -4,7 +4,7 @@ services:
     env: python
     region: singapore # Choose a region closest to Kazakhstan
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:application
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT --workers 2
     plan: free # Start with the free plan for testing
     envVars:
       - key: PYTHON_VERSION
