@@ -712,3 +712,44 @@ The application includes a comprehensive metrics system to track key performance
    - The reporting system can accommodate new analysis requirements
    - The underlying database schema supports detailed drill-down analysis
    - The framework supports future visualization integrations
+
+## Webhook Testing Architecture
+
+The application includes a comprehensive webhook testing infrastructure for development and quality assurance:
+
+1. **Development Webhook Server**
+   - Custom development script (`webhook_dev.py`) for running the bot in webhook mode locally
+   - Supports both Telegram and payment webhook testing in a development environment
+   - Properly configures the application to use webhook mode without code changes
+   - Uses the same web application as production for consistency
+   - Allows for rapid iteration and testing of webhook handlers
+
+2. **Payment Webhook Testing Tools**
+   - Dedicated script (`test_payment_webhook.py`) for simulating payment gateway webhooks
+   - Supports testing various payment statuses (completed, pending, failed)
+   - Properly formats webhook payloads to match production patterns
+   - Includes error handling and verbose logging for debugging
+   - Command-line interface with customizable parameters
+   - Enables testing of the full payment flow without an actual payment provider
+
+3. **Ngrok Integration**
+   - Detailed documentation for using ngrok with the bot for webhook testing
+   - Provides secure HTTPS endpoints for Telegram and payment webhook reception
+   - Enables inspection of all incoming webhook requests
+   - Supports testing on actual Telegram clients without deployment
+   - Ensures a consistent testing environment that closely mirrors production
+
+4. **Webhook Debugging Tools**
+   - Comprehensive logging for webhook processing events
+   - Proper error handling for webhook processing failures
+   - Support for signature verification in webhook payloads
+   - Detailed documentation for troubleshooting webhook issues
+   - Step-by-step guides for webhook testing procedures
+
+5. **Type-Safe Data Processing**
+   - Robust data type validation for webhook payloads
+   - Enhanced datetime handling to support both string and object inputs
+   - Graceful error handling for malformed webhook data
+   - Clear error messages for debugging webhook processing issues
+
+This webhook testing infrastructure ensures that all webhook-related functionality can be thoroughly tested in a development environment before deployment, reducing the risk of issues in production.

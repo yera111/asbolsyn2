@@ -565,7 +565,14 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     
     # Parse pickup start time
     pickup_start_time_str = data.get("pickup_start")
-    hour, minute = map(int, pickup_start_time_str.split(":"))
+    # Check if pickup_start_time_str is a datetime object or a string
+    if isinstance(pickup_start_time_str, datetime.datetime):
+        # If it's a datetime, extract hour and minute directly
+        hour = pickup_start_time_str.hour
+        minute = pickup_start_time_str.minute
+    else:
+        # If it's a string, split it as before
+        hour, minute = map(int, pickup_start_time_str.split(":"))
     
     if is_today:
         pickup_start_time = today.replace(hour=hour, minute=minute)
@@ -577,7 +584,14 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     
     # Parse pickup end time
     pickup_end_time_str = data.get("pickup_end")
-    hour, minute = map(int, pickup_end_time_str.split(":"))
+    # Check if pickup_end_time_str is a datetime object or a string
+    if isinstance(pickup_end_time_str, datetime.datetime):
+        # If it's a datetime, extract hour and minute directly
+        hour = pickup_end_time_str.hour
+        minute = pickup_end_time_str.minute
+    else:
+        # If it's a string, split it as before
+        hour, minute = map(int, pickup_end_time_str.split(":"))
     
     pickup_end_time = pickup_start_time.replace(hour=hour, minute=minute)
     
