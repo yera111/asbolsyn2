@@ -62,7 +62,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal <id> - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order <id> - Подтвердить выдачу заказа (только для поставщиков)",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal <id> - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order <id> - Подтвердить выдачу заказа (только для поставщиков)\n/cancel_order <id> - Отменить застрявший заказ (только для администраторов)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -108,16 +108,16 @@ TEXT = {
     "select_portions": "Выберите количество порций для заказа:",
     "portion_selection": "Вы выбрали {count} порций блюда \"{name}\".\nОбщая стоимость: {total_price} тенге.",
     "view_meal_button": "Посмотреть",
-    "order_created": "Заказ #{order_id} создан. Пожалуйста, перейдите по ссылке для оплаты.",
-    "payment_pending": "После успешной оплаты вы получите подтверждение. Если вы не получили подтверждение в течение 5 минут, пожалуйста, свяжитесь с поддержкой.",
-    "order_confirmed": "✅ Заказ #{order_id} успешно оплачен!\n\nДетали заказа:\n- Блюдо: {meal_name}\n- Количество порций: {quantity}\n- Поставщик: {vendor_name}\n- Адрес самовывоза: {address}\n- Время самовывоза: с {pickup_start} до {pickup_end}\n\nПожалуйста, сохраните номер заказа #{order_id} для предъявления поставщику при получении.",
-    "vendor_notification": "🔔 Новый оплаченный заказ #{order_id}!\n\nДетали заказа:\n- Блюдо: {meal_name}\n- Количество порций: {quantity}\n- Время самовывоза: с {pickup_start} до {pickup_end}\n\nПожалуйста, подготовьте заказ к указанному времени самовывоза.",
-    "payment_failed": "❌ Оплата заказа #{order_id} не удалась. Пожалуйста, попробуйте еще раз или выберите другое блюдо.",
-    "my_orders_empty": "У вас пока нет заказов. Начните с просмотра доступных блюд.",
-    "vendor_orders_empty": "У вас пока нет заказов на ваши блюда.",
-    "order_mark_completed": "Заказ №{order_id} успешно отмечен как выполненный.",
-    "order_complete_usage": "Использование: /complete_order <id_заказа>",
+    "order_created": "Заказ #{order_id} создан!\n\nБлюдо: {meal_name}\nКоличество: {quantity} порций\nЦена: {price} тенге\n\nОплатите заказ, нажав на кнопку ниже.",
+    "order_payment_button": "Оплатить",
+    "order_confirmed": "Заказ #{order_id} успешно оплачен!\n\nБлюдо: {meal_name}\nКоличество: {quantity} порций\nПоставщик: {vendor_name}\nАдрес: {address}\nВремя самовывоза: с {pickup_start} до {pickup_end}\n\nПокажите этот чек продавцу при получении.",
+    "vendor_notification": "Новый оплаченный заказ #{order_id}!\n\nБлюдо: {meal_name}\nКоличество: {quantity} порций\nВремя самовывоза: с {pickup_start} до {pickup_end}",
+    "order_mark_completed": "Заказ #{order_id} успешно отмечен как выполненный!",
+    "order_complete_usage": "Используйте формат: /complete_order <id_заказа>",
     "order_complete_not_paid": "Статус заказа должен быть «Оплачен», чтобы подтвердить выдачу.",
+    "order_cancel_success": "Заказ #{order_id} был успешно отменен.",
+    "order_cancel_usage": "Используйте формат: /cancel_order <id_заказа>",
+    "order_not_found": "Заказ #{order_id} не найден."
 }
 
 
@@ -952,7 +952,7 @@ async def process_buy_callback(callback_query: CallbackQuery):
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
             [types.InlineKeyboardButton(
-                text="Оплатить",
+                text=TEXT["order_payment_button"],
                 url=payment_url
             )]
         ]
@@ -960,7 +960,15 @@ async def process_buy_callback(callback_query: CallbackQuery):
     
     # Send order confirmation message
     await callback_query.message.answer(
-        TEXT["order_created"].format(order_id=order.id) + "\n" + TEXT["payment_pending"],
+        TEXT["order_confirmed"].format(
+            order_id=order.id,
+            meal_name=meal.name,
+            quantity=order.quantity,
+            vendor_name=meal.vendor.name,
+            address=meal.location_address,
+            pickup_start=format_pickup_time(meal.pickup_start_time),
+            pickup_end=format_pickup_time(meal.pickup_end_time)
+        ),
         reply_markup=keyboard
     )
     
@@ -1434,7 +1442,7 @@ async def cmd_complete_order(message: Message):
         order = await Order.filter(id=order_id).prefetch_related('meal', 'meal__vendor', 'consumer').first()
         
         if not order:
-            await message.answer(TEXT["meal_not_found"], reply_markup=get_main_keyboard())
+            await message.answer(TEXT["order_not_found"].format(order_id=order_id), reply_markup=get_main_keyboard())
             return
         
         # Verify the meal belongs to this vendor
@@ -1489,6 +1497,96 @@ async def cmd_complete_order(message: Message):
     except Exception as e:
         logging.error(f"Error completing order: {e}")
         await message.answer(f"Произошла ошибка при выполнении заказа: {e}", reply_markup=get_main_keyboard())
+
+# ---------------------------------------------------------------------------
+# /cancel_order – admin отменяет заказ, который застрял в статусе pending
+# ---------------------------------------------------------------------------
+@dp.message(Command("cancel_order"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="cancel_order_command")
+async def cmd_cancel_order(message: Message):
+    """Handler for admin to cancel a stuck order"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer(TEXT["not_admin"], reply_markup=get_main_keyboard())
+        return
+    
+    # Parse order ID from command
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(TEXT["order_cancel_usage"], reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        order_id = int(args[1])
+        
+        # Get the order
+        order = await Order.filter(id=order_id).prefetch_related('meal', 'meal__vendor', 'consumer').first()
+        
+        if not order:
+            await message.answer(TEXT["order_not_found"].format(order_id=order_id), reply_markup=get_main_keyboard())
+            return
+        
+        # Update order status to CANCELLED
+        previous_status = order.status
+        order.status = OrderStatus.CANCELLED
+        await order.save()
+        
+        # Track order cancellation metric
+        await track_metric(
+            metric_type=MetricType.ORDER_CANCELLED,
+            entity_id=order.id,
+            user_id=user_id,
+            metadata={
+                "meal_id": order.meal.id,
+                "meal_name": order.meal.name,
+                "previous_status": previous_status,
+                "order_quantity": order.quantity
+            }
+        )
+        
+        # Notify the admin
+        await message.answer(TEXT["order_cancel_success"].format(order_id=order.id), reply_markup=get_main_keyboard())
+        
+        # Notify the consumer if possible
+        try:
+            consumer_message = (
+                f"❌ Ваш заказ #{order.id} был отменен администратором.\n\n"
+                f"Блюдо: {order.meal.name}\n"
+                f"Количество порций: {order.quantity}\n\n"
+                f"Пожалуйста, свяжитесь с поддержкой, если у вас есть вопросы."
+            )
+            
+            await bot.send_message(
+                chat_id=order.consumer.telegram_id,
+                text=consumer_message
+            )
+        except Exception as e:
+            logging.error(f"Error notifying consumer about order cancellation: {e}")
+        
+        # Notify the vendor if possible
+        try:
+            vendor = await order.meal.vendor
+            vendor_message = (
+                f"❌ Заказ #{order.id} был отменен администратором.\n\n"
+                f"Блюдо: {order.meal.name}\n"
+                f"Количество порций: {order.quantity}\n\n"
+                f"Пожалуйста, свяжитесь с поддержкой, если у вас есть вопросы."
+            )
+            
+            await bot.send_message(
+                chat_id=vendor.telegram_id,
+                text=vendor_message
+            )
+        except Exception as e:
+            logging.error(f"Error notifying vendor about order cancellation: {e}")
+        
+    except ValueError:
+        await message.answer("Неверный формат ID заказа. Используйте число.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error cancelling order: {e}")
+        await message.answer(f"Произошла ошибка при отмене заказа: {e}", reply_markup=get_main_keyboard())
 
 # Add a new command for viewing metrics (admin only)
 @dp.message(Command("metrics"))

@@ -269,6 +269,19 @@ The consumer functionality is implemented with the following features:
      - Order status (Pending, Paid, Completed, Cancelled)
      - Order date/time
 
+6. **Order Management**
+   - **Order Cancellation**:
+     - Admin can cancel stuck orders with the `/cancel_order <id>` command
+     - System validates admin credentials before allowing cancellation
+     - System updates order status to CANCELLED
+     - Both consumer and vendor are notified about cancellation
+     - Metrics are tracked for cancelled orders
+   - **Order Completion**:
+     - Approved vendors can confirm order receipt with the `/complete_order <id>` command
+     - The system validates order ownership and that the status is PAID
+     - The order is updated to COMPLETED status with completed_at timestamp
+     - The buyer receives notification of order completion
+
 ## Payment Gateway Integration
 
 The payment integration is implemented using a flexible gateway approach:
