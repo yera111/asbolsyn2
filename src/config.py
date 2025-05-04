@@ -64,3 +64,11 @@ PAYMENT_GATEWAY_URL = os.getenv("PAYMENT_GATEWAY_URL", "https://test-payment.kz"
 PAYMENT_WEBHOOK_SECRET = os.getenv("PAYMENT_WEBHOOK_SECRET", "webhook_secret" if TESTING else "demo_webhook_secret")
 PAYMENT_SUCCESS_URL = os.getenv("PAYMENT_SUCCESS_URL", "https://t.me/as_bolsyn_bot")
 PAYMENT_FAILURE_URL = os.getenv("PAYMENT_FAILURE_URL", "https://t.me/as_bolsyn_bot")
+
+# Telegram Payment Configuration
+TELEGRAM_PAYMENT_ENABLED = os.getenv("TELEGRAM_PAYMENT_ENABLED", "True").lower() in ["true", "1", "yes"]
+# Use test payment provider token by default in test mode, otherwise use the production token
+TELEGRAM_PAYMENT_PROVIDER_TOKEN = os.getenv("TELEGRAM_PAYMENT_PROVIDER_TOKEN", 
+                                          os.getenv("TELEGRAM_PAYMENT_TEST_TOKEN") if TESTING 
+                                          else "")
+TELEGRAM_PAYMENT_CURRENCY = os.getenv("TELEGRAM_PAYMENT_CURRENCY", "KGS")  # Kyrgyz Sum (KGS)

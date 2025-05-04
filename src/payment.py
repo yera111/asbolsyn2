@@ -10,7 +10,10 @@ from .config import (
     PAYMENT_GATEWAY_URL,
     PAYMENT_WEBHOOK_SECRET,
     PAYMENT_SUCCESS_URL,
-    PAYMENT_FAILURE_URL
+    PAYMENT_FAILURE_URL,
+    TELEGRAM_PAYMENT_ENABLED,
+    TELEGRAM_PAYMENT_PROVIDER_TOKEN,
+    TELEGRAM_PAYMENT_CURRENCY
 )
 from .models import Order, OrderStatus, Meal
 
@@ -19,8 +22,9 @@ logger = logging.getLogger(__name__)
 class PaymentGateway:
     """
     Payment gateway integration for As Bolsyn.
-    This is a simulated version for testing purposes.
-    In a real implementation, this would integrate with an actual payment provider API.
+    Supports both:
+    1. Telegram's built-in payment system (preferred when enabled)
+    2. External payment provider (legacy/fallback method)
     """
     
     def __init__(self):
@@ -29,10 +33,26 @@ class PaymentGateway:
         self.api_key = PAYMENT_GATEWAY_API_KEY
         self.secret = PAYMENT_GATEWAY_SECRET
         self.base_url = PAYMENT_GATEWAY_URL
+        
+        # Telegram payment settings
+        self.telegram_payment_enabled = TELEGRAM_PAYMENT_ENABLED
+        self.telegram_provider_token = TELEGRAM_PAYMENT_PROVIDER_TOKEN
+        self.currency = TELEGRAM_PAYMENT_CURRENCY
+    
+    def is_telegram_payments_available(self):
+        """Check if Telegram payments are available and configured."""
+        return (self.telegram_payment_enabled and 
+                self.telegram_provider_token and 
+                len(self.telegram_provider_token) > 5)
     
     async def create_payment(self, order_id, amount, description=None):
         """
         Create a payment for an order.
+        
+        If Telegram payments are available, this will simply return a flag indicating 
+        that the Telegram payment flow should be used.
+        
+        If Telegram payments are not available, it will fall back to the legacy external payment flow.
         
         Args:
             order_id: The unique order identifier
@@ -40,18 +60,28 @@ class PaymentGateway:
             description: Optional payment description
             
         Returns:
-            tuple: (payment_id, payment_url) or (None, None) if payment creation failed
+            tuple: (payment_id, payment_url) for external payments, or
+                  (payment_id, None) for Telegram payments
         """
+        # If Telegram payments are enabled and configured, use the built-in payment system
+        if self.is_telegram_payments_available():
+            # For Telegram payments, we only need to return a payment ID
+            # The actual payment will be initiated via the Telegram API with an invoice
+            payment_id = f"TG-{order_id}-{int(uuid.uuid4())}"
+            logger.info(f"Creating Telegram payment {payment_id} for order {order_id} with amount {amount}")
+            return payment_id, None
+            
+        # Otherwise, fall back to the legacy external payment gateway flow
         if not self.enabled:
             logger.warning("Payment gateway is disabled.")
             return None, None
             
         # Generate a unique payment ID
-        payment_id = str(uuid.uuid4())
+        payment_id = f"EXT-{order_id}-{int(uuid.uuid4())}"
         
         # In a real implementation, this would make an API call to the payment gateway
         # For the MVP, we'll simulate the payment flow
-        logger.info(f"Creating payment {payment_id} for order {order_id} with amount {amount}")
+        logger.info(f"Creating external payment {payment_id} for order {order_id} with amount {amount}")
         
         # Ensure we have valid URLs even when environment variables aren't set
         base_url = self.base_url or "https://example.com"

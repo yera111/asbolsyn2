@@ -290,16 +290,42 @@ The payment integration is implemented using a flexible gateway approach:
    - Implemented as a separate module for clear separation of concerns
    - Provides a common interface that can be adapted to different payment providers
    - Handles payment creation, verification, and webhook processing
-   - For the MVP, includes a simulated payment flow for testing
+   - Supports two payment methods:
+     - **Telegram's Built-in Payment System**: Primary method when available
+     - **External Payment Gateway**: Fallback method when Telegram payments aren't configured
 
-2. **Payment Creation Flow**
+2. **Telegram Payment Integration**
+   - Uses Telegram's native payment API for a seamless in-app checkout experience
+   - Integrated with Freedom Pay KGS (Kyrgyz sum) as the payment provider
+   - Configuration through environment variables:
+     - `TELEGRAM_PAYMENT_ENABLED`: Flag to enable/disable Telegram payments
+     - `TELEGRAM_PAYMENT_PROVIDER_TOKEN`: Production token from BotFather
+     - `TELEGRAM_PAYMENT_TEST_TOKEN`: Test token for development/testing
+     - `TELEGRAM_PAYMENT_CURRENCY`: Currency code (default: KGS)
+   - Payment flow:
+     - User selects meal and quantity, initiating the order creation
+     - Bot creates a Telegram invoice with meal details and price
+     - Pre-checkout validation ensures meal is still available
+     - Successful payment updates the order status and notifies vendor
+   - Handlers:
+     - `process_pre_checkout_query`: Validates availability before completing payment
+     - `process_successful_payment`: Handles successful payment completion
+
+3. **External Payment Gateway (Fallback)**
+   - Used when Telegram payments are not available or disabled
    - When user confirms purchase, system creates a pending order
    - System calls the payment gateway to generate a payment ID and URL
    - System associates the payment ID with the order
    - System presents payment URL to user via Telegram inline button
    - User is redirected to the payment provider's page to complete payment
 
-3. **Payment URL Generation**
+4. **Payment Creation Flow**
+   - System checks if Telegram payments are available and configured
+   - If available, generates a Telegram invoice with the order details
+   - If not available, falls back to the external payment gateway flow
+   - Both methods associate a unique payment ID with the order for tracking
+
+5. **Payment URL Generation (External Method)**
    - Uses a resilient approach with fallback values for all configuration
    - Ensures valid HTTP URLs even when environment variables are missing
    - Includes order ID and amount in payment URL for tracking
@@ -308,26 +334,28 @@ The payment integration is implemented using a flexible gateway approach:
    - Configurable for different payment providers through environment variables
    - Has sensible defaults for development and testing environments
 
-4. **Payment Confirmation**
-   - Payment provider sends a webhook notification to the bot
-   - System verifies the webhook signature for security
-   - System retrieves the associated order using the payment ID
-   - System updates order status to "paid"
-   - System decreases the meal's available quantity
-   - System sends confirmation notifications
+6. **Payment Confirmation**
+   - **Telegram Method**:
+     - Bot receives a successful_payment message
+     - System retrieves the associated order using the payment payload
+     - System updates order status to "paid"
+     - System decreases the meal's available quantity
+     - System sends confirmation notifications
+   - **External Method**:
+     - Payment provider sends a webhook notification to the bot
+     - System verifies the webhook signature for security
+     - System retrieves the associated order using the payment ID
+     - System updates order status to "paid"
+     - System decreases the meal's available quantity
+     - System sends confirmation notifications
 
-5. **Payment Simulation**
-   - For development and testing, the MVP includes a simulated payment flow
-   - Simulated webhooks are generated automatically after a short delay
-   - This allows testing the full payment flow without a live payment provider
-   - Configuration options allow easy switching between simulation and real providers
-
-6. **Error Handling**
+7. **Error Handling**
    - System handles various error scenarios:
      - Meal no longer available
      - Insufficient quantity
      - Payment gateway errors
      - Webhook processing failures
+     - Pre-checkout validation failures
    - Provides clear error messages to users
    - Logs detailed error information for debugging
 

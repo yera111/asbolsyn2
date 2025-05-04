@@ -6,17 +6,25 @@ import json
 from decimal import Decimal
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters.command import Command
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import (
+    Message, CallbackQuery, ReplyKeyboardMarkup, 
+    KeyboardButton, ReplyKeyboardRemove, ContentType
+)
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from .config import BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE, RATE_LIMIT_GENERAL, RATE_LIMIT_REGISTER, RATE_LIMIT_ADD_MEAL, RATE_LIMIT_PAYMENT
+from .config import (
+    BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE, 
+    RATE_LIMIT_GENERAL, RATE_LIMIT_REGISTER, RATE_LIMIT_ADD_MEAL, RATE_LIMIT_PAYMENT,
+    TELEGRAM_PAYMENT_PROVIDER_TOKEN, TELEGRAM_PAYMENT_CURRENCY, TELEGRAM_PAYMENT_ENABLED
+)
 from .db import init_db, close_db
 from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus, Metric, MetricType
 from .tasks import scheduled_tasks
 from .metrics import track_metric, get_metrics_report, get_metrics_dashboard_data
 from .security import rate_limit
+from .payment import payment_gateway
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,7 +70,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal <id> - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order <id> - Подтвердить выдачу заказа (только для поставщиков)\n/cancel_order <id> - Отменить застрявший заказ (только для администраторов)",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)\n/cancel_order ID - Отменить застрявший заказ (только для администраторов)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -117,7 +125,14 @@ TEXT = {
     "order_complete_not_paid": "Статус заказа должен быть «Оплачен», чтобы подтвердить выдачу.",
     "order_cancel_success": "Заказ #{order_id} был успешно отменен.",
     "order_cancel_usage": "Используйте формат: /cancel_order <id_заказа>",
-    "order_not_found": "Заказ #{order_id} не найден."
+    "order_not_found": "Заказ #{order_id} не найден.",
+    # Payment related texts
+    "payment_not_available": "В данный момент оплата недоступна. Пожалуйста, попробуйте позже или обратитесь в поддержку.",
+    "payment_title": "Заказ блюда в As Bolsyn",
+    "payment_description": "Блюдо: {meal_name}\nКоличество: {count} порций",
+    "payment_payload": "order_{order_id}",
+    "payment_successful": "Оплата успешно произведена! Ваш заказ #{order_id} оформлен.",
+    "payment_checkout_failed": "Не удалось обработать платеж. Пожалуйста, попробуйте еще раз или выберите другой способ оплаты."
 }
 
 
@@ -952,46 +967,103 @@ async def process_buy_callback(callback_query: CallbackQuery):
         }
     )
     
-    # Generate payment ID (in a real app, this would come from a payment provider)
-    payment_id = f"PAY-{order.id}-{int(datetime.datetime.now().timestamp())}"
+    # Calculate total price
+    total_price = meal.price * count
     
-    # Update order with payment ID
-    order.payment_id = payment_id
-    await order.save()
-    
-    # Create payment URL (in a real app, this would be a link to the payment provider)
-    payment_url = f"https://example.com/pay?order_id={order.id}&amount={meal.price * count}"
-    
-    # Create payment button
-    keyboard = types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(
-                text=TEXT["order_payment_button"],
-                url=payment_url
-            )]
+    # Check if Telegram payments are available
+    if payment_gateway.is_telegram_payments_available():
+        # Use Telegram's built-in payment system
+        payment_id, _ = await payment_gateway.create_payment(order.id, total_price)
+        
+        # Update order with payment ID
+        order.payment_id = payment_id
+        await order.save()
+        
+        # Create Telegram invoice
+        prices = [
+            types.LabeledPrice(
+                label=f"{meal.name} x {count}",
+                amount=int(total_price * 100)  # Amount in smallest currency units (cents/kopecks)
+            )
         ]
-    )
-    
-    # Send order confirmation message
-    await callback_query.message.answer(
-        TEXT["order_confirmed"].format(
-            order_id=order.id,
-            meal_name=meal.name,
-            quantity=order.quantity,
-            vendor_name=meal.vendor.name,
-            address=meal.location_address,
-            pickup_start=format_pickup_time(meal.pickup_start_time),
-            pickup_end=format_pickup_time(meal.pickup_end_time)
-        ),
-        reply_markup=keyboard
-    )
-    
-    # Answer the callback query
-    await callback_query.answer()
-    
-    # For demo/testing purposes, simulate a payment webhook after 10 seconds
-    # This would be replaced by an actual payment provider webhook in production
-    asyncio.create_task(simulate_payment_webhook(order.id, payment_id))
+        
+        # Send invoice
+        try:
+            await bot.send_invoice(
+                chat_id=user_id,
+                title=TEXT["payment_title"],
+                description=TEXT["payment_description"].format(
+                    meal_name=meal.name,
+                    count=count
+                ),
+                payload=TEXT["payment_payload"].format(order_id=order.id),
+                provider_token=payment_gateway.telegram_provider_token,
+                currency=payment_gateway.currency,
+                prices=prices,
+                start_parameter=f"order_{order.id}",
+                need_name=False,
+                need_phone_number=False,
+                need_email=False,
+                need_shipping_address=False,
+                is_flexible=False,
+                protect_content=True
+            )
+            
+            # Send information message
+            await callback_query.message.answer(
+                TEXT["order_created"].format(
+                    order_id=order.id,
+                    meal_name=meal.name,
+                    quantity=count,
+                    price=total_price
+                )
+            )
+            
+            # Answer the callback query
+            await callback_query.answer()
+            
+        except Exception as e:
+            logging.error(f"Error sending invoice: {e}")
+            await callback_query.answer(TEXT["payment_not_available"])
+    else:
+        # Fall back to legacy payment method (external payment gateway)
+        payment_id, payment_url = await payment_gateway.create_payment(order.id, total_price)
+        
+        if not payment_id or not payment_url:
+            await callback_query.answer("Не удалось создать платеж. Пожалуйста, попробуйте позже.")
+            return
+        
+        # Update order with payment ID
+        order.payment_id = payment_id
+        await order.save()
+        
+        # Create payment button
+        keyboard = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [types.InlineKeyboardButton(
+                    text=TEXT["order_payment_button"],
+                    url=payment_url
+                )]
+            ]
+        )
+        
+        # Send order confirmation message
+        await callback_query.message.answer(
+            TEXT["order_created"].format(
+                order_id=order.id,
+                meal_name=meal.name,
+                quantity=order.quantity,
+                price=total_price
+            ),
+            reply_markup=keyboard
+        )
+        
+        # Answer the callback query
+        await callback_query.answer()
+        
+        # For demo/testing purposes, simulate a payment webhook after 10 seconds
+        # This would be replaced by an actual payment provider webhook in production
+        asyncio.create_task(simulate_payment_webhook(order.id, payment_id))
 
 
 @dp.message(Command("meals_nearby"))
@@ -1716,10 +1788,130 @@ async def periodic_task_runner():
             # Wait a bit before retry in case of error
             await asyncio.sleep(60)
 
+# Payment related handlers
+@dp.pre_checkout_query()
+@rate_limit(limit=RATE_LIMIT_PAYMENT, period=60, key="pre_checkout_query")
+async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
+    """
+    Handler for pre-checkout queries from Telegram payments
+    This is called when a user initiates a payment through Telegram
+    """
+    try:
+        # Extract order ID from payload
+        # Expected format: "order_123" where 123 is the order ID
+        payload = pre_checkout_query.invoice_payload
+        order_id = int(payload.split('_')[1])
+        
+        # Verify the order exists and is still pending
+        order = await Order.filter(id=order_id, status=OrderStatus.PENDING).prefetch_related('meal').first()
+        
+        # If order not found or not in PENDING status, reject the checkout
+        if not order:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout_query.id,
+                ok=False,
+                error_message=TEXT["order_not_found"].format(order_id=order_id)
+            )
+            return
+            
+        # Verify meal is still available and has enough quantity
+        meal = order.meal
+        if not meal.is_active or meal.quantity < order.quantity:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout_query.id,
+                ok=False,
+                error_message="Блюдо больше не доступно или количество порций уменьшилось."
+            )
+            return
+            
+        # All checks passed, approve the checkout
+        await bot.answer_pre_checkout_query(
+            pre_checkout_query_id=pre_checkout_query.id,
+            ok=True
+        )
+        
+    except Exception as e:
+        logging.error(f"Error processing pre-checkout query: {e}")
+        # If any error occurred, reject the checkout
+        await bot.answer_pre_checkout_query(
+            pre_checkout_query_id=pre_checkout_query.id,
+            ok=False,
+            error_message=TEXT["payment_checkout_failed"]
+        )
+
+
+@dp.message(lambda message: message.content_type == types.ContentType.SUCCESSFUL_PAYMENT)
+async def process_successful_payment(message: Message):
+    """
+    Handler for successful payments through Telegram
+    This is called when a user successfully completes payment
+    """
+    try:
+        # Get payment info
+        payment = message.successful_payment
+        
+        # Extract order ID from payload
+        payload = payment.invoice_payload
+        order_id = int(payload.split('_')[1])
+        
+        # Get the order
+        order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer').first()
+        
+        if not order:
+            await message.answer(TEXT["order_not_found"].format(order_id=order_id))
+            return
+        
+        # Update order status to PAID
+        order.status = OrderStatus.PAID
+        await order.save()
+        
+        # Update meal quantity
+        meal = order.meal
+        meal.quantity = max(0, meal.quantity - order.quantity)
+        await meal.save()
+        
+        # Track payment metric
+        await track_metric(
+            metric_type=MetricType.ORDER_PAID,
+            entity_id=order.id,
+            user_id=order.consumer.telegram_id,
+            value=float(order.quantity),
+            metadata={
+                "meal_id": order.meal.id,
+                "meal_name": order.meal.name,
+                "order_quantity": order.quantity,
+                "order_value": float(order.meal.price * order.quantity),
+                "payment_method": "telegram"
+            }
+        )
+        
+        # Send order confirmation to consumer
+        await message.answer(
+            TEXT["order_confirmed"].format(
+                order_id=order.id,
+                meal_name=meal.name,
+                quantity=order.quantity,
+                vendor_name=meal.vendor.name,
+                address=meal.location_address,
+                pickup_start=format_pickup_time(meal.pickup_start_time),
+                pickup_end=format_pickup_time(meal.pickup_end_time)
+            )
+        )
+        
+        # Send notification to vendor about new order
+        await send_order_notifications(order.id)
+        
+        # Show payment successful message
+        await message.answer(TEXT["payment_successful"].format(order_id=order.id))
+        
+    except Exception as e:
+        logging.error(f"Error processing successful payment: {e}")
+        await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+
 
 if __name__ == "__main__":
-    """Entry point for direct execution (polling mode)"""
+    """Entry point for running the bot in polling mode directly"""
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
+    except KeyboardInterrupt:
         logging.info("Bot stopped!")
