@@ -204,24 +204,38 @@ def rate_limit(limit=5, period=60, key=None):
     """
     def decorator(handler):
         @wraps(handler)
-        async def wrapper(message: Message, *args, **kwargs):
-            user_id = message.from_user.id
+        async def wrapper(message, *args, **kwargs):
+            # Get user ID from either Message or CallbackQuery
+            if hasattr(message, 'from_user'):
+                user_id = message.from_user.id
+            else:
+                logger.warning(f"Could not get user ID from message: {type(message)}")
+                return await handler(message, *args, **kwargs)
+                
             request_type = key or handler.__name__
             
-            # Track command usage if it's a command
-            if message.content_type == types.ContentType.TEXT and message.text and message.text.startswith("/"):
-                command = message.text.split()[0]
-                rate_limiter.track_command(user_id, command)
-            
-            # Check for spam in text messages
-            if message.content_type == types.ContentType.TEXT and contains_spam(message.text):
-                logger.warning(f"Spam message detected from user {user_id}")
-                await message.answer("Ваше сообщение было заблокировано как возможный спам.")
-                return
+            # Handle commands and spam only for Message objects, not CallbackQuery
+            if hasattr(message, 'content_type') and hasattr(message, 'text'):
+                # Track command usage if it's a command
+                if message.content_type == types.ContentType.TEXT and message.text and message.text.startswith("/"):
+                    command = message.text.split()[0]
+                    rate_limiter.track_command(user_id, command)
+                
+                # Check for spam in text messages
+                if message.content_type == types.ContentType.TEXT and contains_spam(message.text):
+                    logger.warning(f"Spam message detected from user {user_id}")
+                    await message.answer("Ваше сообщение было заблокировано как возможный спам.")
+                    return
             
             # Check rate limits
             if rate_limiter.is_rate_limited(user_id, limit, period, request_type):
-                await message.answer("Вы слишком часто используете этот бот. Пожалуйста, подождите немного перед повторной попыткой.")
+                # Create response based on message type
+                if hasattr(message, 'answer'):
+                    # For Message objects
+                    await message.answer("Вы слишком часто используете этот бот. Пожалуйста, подождите немного перед повторной попыткой.")
+                elif hasattr(message, 'message'):
+                    # For CallbackQuery objects
+                    await message.message.answer("Вы слишком часто используете этот бот. Пожалуйста, подождите немного перед повторной попыткой.")
                 return
             
             # If not rate limited, proceed with the handler

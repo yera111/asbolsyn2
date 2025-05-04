@@ -923,7 +923,6 @@ async def callback_select_portions(callback_query: CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('buy_meal:'))
-@rate_limit(limit=RATE_LIMIT_PAYMENT, period=60, key="buy_meal_callback")
 async def process_buy_callback(callback_query: CallbackQuery):
     """Handler for Buy button callback"""
     # Parse callback data
@@ -1305,7 +1304,11 @@ async def send_order_notifications(order_id):
         
         # Get related models
         meal = order.meal
-        vendor = await meal.vendor
+        vendor = meal.vendor
+        
+        if not vendor:
+            logging.error(f"Vendor not found for order: {order_id}")
+            return
         
         # Format pickup times
         pickup_start = format_pickup_time(meal.pickup_start_time)
@@ -1790,7 +1793,6 @@ async def periodic_task_runner():
 
 # Payment related handlers
 @dp.pre_checkout_query()
-@rate_limit(limit=RATE_LIMIT_PAYMENT, period=60, key="pre_checkout_query")
 async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery):
     """
     Handler for pre-checkout queries from Telegram payments
@@ -1840,12 +1842,14 @@ async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery)
         )
 
 
-@dp.message(lambda message: message.content_type == types.ContentType.SUCCESSFUL_PAYMENT)
+@dp.message(lambda message: getattr(message, 'content_type', None) == types.ContentType.SUCCESSFUL_PAYMENT)
 async def process_successful_payment(message: Message):
     """
     Handler for successful payments through Telegram
     This is called when a user successfully completes payment
     """
+    success = False  # Flag to track if the entire process completed successfully
+    
     try:
         # Get payment info
         payment = message.successful_payment
@@ -1854,10 +1858,11 @@ async def process_successful_payment(message: Message):
         payload = payment.invoice_payload
         order_id = int(payload.split('_')[1])
         
-        # Get the order
-        order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer').first()
+        # Get the order with all related models
+        order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer', 'meal__vendor').first()
         
         if not order:
+            logging.error(f"Order {order_id} not found for successful payment")
             await message.answer(TEXT["order_not_found"].format(order_id=order_id))
             return
         
@@ -1865,8 +1870,20 @@ async def process_successful_payment(message: Message):
         order.status = OrderStatus.PAID
         await order.save()
         
-        # Update meal quantity
+        # Validate meal and vendor information
         meal = order.meal
+        if not meal:
+            logging.error(f"Meal not found for order {order_id}")
+            await message.answer("К сожалению, информация о блюде не найдена, но ваш платеж был успешно обработан. Пожалуйста, свяжитесь с поддержкой для уточнения деталей заказа.")
+            return
+            
+        vendor = meal.vendor
+        if not vendor:
+            logging.error(f"Vendor not found for meal {meal.id} in order {order_id}")
+            await message.answer("К сожалению, информация о поставщике не найдена, но ваш платеж был успешно обработан. Пожалуйста, свяжитесь с поддержкой для уточнения деталей заказа.")
+            return
+        
+        # Update meal quantity
         meal.quantity = max(0, meal.quantity - order.quantity)
         await meal.save()
         
@@ -1877,13 +1894,17 @@ async def process_successful_payment(message: Message):
             user_id=order.consumer.telegram_id,
             value=float(order.quantity),
             metadata={
-                "meal_id": order.meal.id,
-                "meal_name": order.meal.name,
+                "meal_id": meal.id,
+                "meal_name": meal.name,
                 "order_quantity": order.quantity,
-                "order_value": float(order.meal.price * order.quantity),
+                "order_value": float(meal.price * order.quantity),
                 "payment_method": "telegram"
             }
         )
+        
+        # Format pickup times for message
+        pickup_start = format_pickup_time(meal.pickup_start_time)
+        pickup_end = format_pickup_time(meal.pickup_end_time)
         
         # Send order confirmation to consumer
         await message.answer(
@@ -1891,22 +1912,51 @@ async def process_successful_payment(message: Message):
                 order_id=order.id,
                 meal_name=meal.name,
                 quantity=order.quantity,
-                vendor_name=meal.vendor.name,
+                vendor_name=vendor.name,
                 address=meal.location_address,
-                pickup_start=format_pickup_time(meal.pickup_start_time),
-                pickup_end=format_pickup_time(meal.pickup_end_time)
+                pickup_start=pickup_start,
+                pickup_end=pickup_end
             )
         )
         
-        # Send notification to vendor about new order
-        await send_order_notifications(order.id)
+        # Send notification to vendor about new order 
+        try:
+            # Send vendor notification
+            vendor_message = TEXT["vendor_notification"].format(
+                order_id=order.id,
+                meal_name=meal.name,
+                quantity=order.quantity,
+                pickup_start=pickup_start,
+                pickup_end=pickup_end
+            )
+            
+            await bot.send_message(
+                chat_id=vendor.telegram_id,
+                text=vendor_message
+            )
+        except Exception as vendor_notification_error:
+            logging.error(f"Error notifying vendor: {vendor_notification_error}")
+            # Don't send an error message to the user since this is not critical
+            
+        # All steps completed successfully
+        success = True
         
         # Show payment successful message
         await message.answer(TEXT["payment_successful"].format(order_id=order.id))
         
     except Exception as e:
         logging.error(f"Error processing successful payment: {e}")
-        await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+        
+        # Only show error message if we haven't already shown success
+        if not success:
+            # Check if we at least managed to update the order status
+            try:
+                if 'order' in locals() and order and order.status == OrderStatus.PAID:
+                    await message.answer(f"Ваш платеж был успешно обработан и заказ #{order.id} отмечен как оплаченный, но возникла ошибка при обработке дополнительной информации. Пожалуйста, проверьте статус вашего заказа в разделе 'Мои заказы'.")
+                else:
+                    await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+            except Exception:
+                await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
 
 
 if __name__ == "__main__":
