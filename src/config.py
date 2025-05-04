@@ -72,3 +72,16 @@ TELEGRAM_PAYMENT_PROVIDER_TOKEN = os.getenv("TELEGRAM_PAYMENT_PROVIDER_TOKEN",
                                           os.getenv("TELEGRAM_PAYMENT_TEST_TOKEN") if TESTING 
                                           else "")
 TELEGRAM_PAYMENT_CURRENCY = os.getenv("TELEGRAM_PAYMENT_CURRENCY", "KGS")  # Kyrgyz Sum (KGS)
+
+# Tortoise ORM Configuration for Aerich
+TORTOISE_ORM = {
+    "connections": {"default": DATABASE_URL},
+    "apps": {
+        "models": {
+            "models": ["src.models", "aerich.models"],
+            "default_connection": "default",
+        },
+    },
+    "use_tz": True,
+    "timezone": "Asia/Almaty"
+}

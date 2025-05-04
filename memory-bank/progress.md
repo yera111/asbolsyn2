@@ -515,3 +515,26 @@
 - Test Telegram payment system with real users
 - Monitor payment conversion rates
 - Optimize payment flow based on user feedback
+
+## Phase 12: Database Management Enhancements
+
+### Step 12.1: Integration of Aerich for Database Migrations ✅
+- **Completed on:** July 25, 2025
+- **Status:** Completed
+- **Summary:**
+  - Integrated Aerich, the standard migration tool for Tortoise ORM
+  - Replaced manual database schema management with proper migration system
+  - Added Aerich configuration in pyproject.toml for managing migrations
+  - Created migration scripts for both Linux/Mac and Windows environments
+  - Updated database initialization to work with Aerich migrations
+  - Added Aerich to project dependencies
+  - Updated architecture documentation with new migration approach
+  - Ensured compatibility with testing environment
+  - Retained SQLite schema generation for tests
+  - Added CI integration for automatic migration application
+  - Improved production deployment reliability with structured migrations
+
+### Next Steps:
+- Create initial migration for the existing schema
+- Add migration step to deployment workflow
+- Update developer documentation with migration instructions

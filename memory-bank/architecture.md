@@ -361,19 +361,40 @@ The payment integration is implemented using a flexible gateway approach:
 
 ## Database Migration System
 
-The application includes a simple database migration system to handle schema evolution:
+The application includes a comprehensive database migration system using Aerich to handle schema evolution:
 
-1. **Schema Validation**
-   - When the application starts, it checks the database schema
-   - Verifies that required tables and columns exist
-   - Automatically adds missing columns when needed
-   - Preserves existing data during migrations
+1. **Aerich Integration**
+   - Uses Aerich, the standard migration tool for Tortoise ORM
+   - Stores migrations in a structured format in the `migrations` directory
+   - Tracks applied migrations in a dedicated `aerich` table
+   - Uses Python files for migrations, allowing for complex migration logic
+   - Supports both automatic schema detection and manual migration writing
 
-2. **Testing Support**
+2. **Migration Workflow**
+   - **Generation**: `aerich migrate --name migration_name` creates new migration files based on model changes
+   - **Application**: `aerich upgrade` applies pending migrations to the database
+   - **Rollback**: `aerich downgrade -v version` allows rolling back to a previous version if needed
+   - **History**: `aerich history` shows migration history
+   - **Pending**: `aerich heads` shows pending migrations that haven't been applied
+
+3. **CI/CD Integration**
+   - Automatic migration application as part of the deployment process
+   - Migration scripts for both Unix-based systems and Windows
+   - Fail-safe checks to ensure database is properly migrated before application starts
+   - Environment-specific migration handling for development, testing, and production
+
+4. **Testing Support**
    - Uses in-memory SQLite for automated testing
    - Provides fixture utilities to set up clean test environments
+   - Direct schema generation for tests without requiring migrations
    - Simulates environment variables needed for testing
    - Prevents test isolation issues with automatic cleanup
+
+5. **Configuration**
+   - Aerich configuration in `pyproject.toml` for project-wide settings
+   - Tortoise ORM configuration in `src/config.py` providing database details
+   - Ensures smooth integration with existing Tortoise ORM setup
+   - Maintains backward compatibility with existing code
 
 ## Testing Architecture
 

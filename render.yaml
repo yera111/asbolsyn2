@@ -4,7 +4,7 @@ services:
     env: python
     region: singapore # Choose a region closest to Kazakhstan
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: python -m src.main
     plan: free # Start with the free plan for testing
     envVars:
       - key: PYTHON_VERSION
@@ -15,21 +15,35 @@ services:
         fromService:
           type: web
           name: as-bolsyn-bot
-          envVarKey: RENDER_EXTERNAL_URL
+          property: url
       - key: WEBHOOK_PATH
         value: /webhook
       - key: BOT_TOKEN
-        sync: false # Requires manual setup in Render dashboard
+        sync: false
+      - key: TELEGRAM_PAYMENT_PROVIDER_TOKEN
+        sync: false
+      - key: TELEGRAM_PAYMENT_TEST_TOKEN
+        sync: false
       - key: DB_HOST
-        sync: false
+        fromDatabase:
+          name: as-bolsyn-db
+          property: host
       - key: DB_PORT
-        sync: false
+        fromDatabase:
+          name: as-bolsyn-db
+          property: port
       - key: DB_NAME
-        sync: false
+        fromDatabase:
+          name: as-bolsyn-db
+          property: database
       - key: DB_USER
-        sync: false 
+        fromDatabase:
+          name: as-bolsyn-db
+          property: user
       - key: DB_PASSWORD
-        sync: false
+        fromDatabase:
+          name: as-bolsyn-db
+          property: password
       - key: ADMIN_CHAT_ID
         sync: false
       - key: PAYMENT_GATEWAY_ENABLED
@@ -46,6 +60,14 @@ services:
         sync: false
       - key: PAYMENT_FAILURE_URL
         sync: false
+      - key: PORT
+        fromService:
+          type: web
+          name: as-bolsyn-bot
+          property: port
+    healthCheckPath: /health
+    # Add database migration before starting the application
+    preDeployCommand: python -c "import subprocess; subprocess.run(['aerich', 'upgrade'])"
 
 databases:
   - name: as-bolsyn-db

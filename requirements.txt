@@ -8,3 +8,4 @@ gunicorn==21.2.0
 uvicorn==0.23.2
 aiohttp_cors==0.7.0
 pytz==2023.3
+aerich==0.7.2
