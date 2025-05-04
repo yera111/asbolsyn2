@@ -68,8 +68,8 @@ services:
       - key: USE_SSL
         value: false
     healthCheckPath: /health
-    # Add database migration before starting the application
-    preDeployCommand: python -c "import subprocess; subprocess.run(['aerich', 'upgrade'])"
+    # Add database initialization and migration before starting the application
+    preDeployCommand: python scripts/init_db.py
 
 databases:
   - name: as-bolsyn-db

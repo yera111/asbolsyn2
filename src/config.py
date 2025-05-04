@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import pytz
+import urllib.parse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -43,11 +44,14 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 # Admin configuration
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "12345" if TESTING else None)
 
+# URL encode the password to handle special characters
+encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
+
 # Database URL for Tortoise ORM
-DATABASE_URL = f"postgres://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DB_URL = f"postgres://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 if TESTING:
     # Use SQLite in-memory for testing
-    DATABASE_URL = "sqlite://:memory:"
+    DB_URL = "sqlite://:memory:"
 
 # Default language
 DEFAULT_LANGUAGE = "ru"
@@ -75,7 +79,7 @@ TELEGRAM_PAYMENT_CURRENCY = os.getenv("TELEGRAM_PAYMENT_CURRENCY", "KGS")  # Kyr
 
 # Tortoise ORM Configuration for Aerich
 TORTOISE_ORM = {
-    "connections": {"default": DATABASE_URL},
+    "connections": {"default": DB_URL},
     "apps": {
         "models": {
             "models": ["src.models", "aerich.models"],
