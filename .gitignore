@@ -19,21 +19,68 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Environment
 .env
+.venv/
 venv/
 ENV/
+env/
+env.bak/
+venv.bak/
 
 # IDE and editors
 .idea/
 .vscode/
 *.swp
 *.swo
+.DS_Store
+*~
+.*.sw[a-p]
 
 # Database
 *.db
 *.sqlite3
+*.sqlite
 
 # Logs
-*.log 
+*.log
+logs/
+*.log.*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Aerich migration tool
+migrations/backup/
+
+# Telegram bot specific
+*.session
+*.session-journal
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Node (for any frontend components)
+node_modules/
+npm-debug.log
+
+# Application specific files
+e2e_test_results_*.log
+.cursor/
+
+# Temporary files
+tmp/
+.temp/ 
