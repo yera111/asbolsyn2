@@ -46,7 +46,7 @@ async def handle_payment_webhook(request):
         return web.json_response({"status": "error", "message": str(e)}, status=400)
 
 
-async def on_startup(bot: Bot, webhook_url: str = None):
+async def on_startup(app=None):
     """Execute startup tasks"""
     # Initialize database connection
     await init_db()
@@ -55,12 +55,12 @@ async def on_startup(bot: Bot, webhook_url: str = None):
     await start_security_tasks()
     
     # Set webhook if in webhook mode
-    if WEBHOOK_MODE and webhook_url:
-        await bot.set_webhook(webhook_url)
-        logger.info(f"Webhook set to: {webhook_url}")
+    if WEBHOOK_MODE and WEBHOOK_URL:
+        await bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"Webhook set to: {WEBHOOK_URL}")
 
 
-async def on_shutdown(bot: Bot):
+async def on_shutdown(app=None):
     """Execute shutdown tasks"""
     # Remove webhook if in webhook mode
     if WEBHOOK_MODE:
@@ -77,6 +77,13 @@ async def security_middleware(request, handler):
     return await webhook_security_middleware(request, handler)
     
 app.middlewares.append(security_middleware)
+
+# Health check endpoint
+async def health_check(request):
+    """Simple health check endpoint for monitoring"""
+    return web.json_response({"status": "ok"})
+    
+app.router.add_get('/health', health_check)
 
 # Configure the app for ASGI
 if WEBHOOK_MODE:
@@ -103,52 +110,47 @@ if WEBHOOK_MODE:
     webhook_requests_handler.register(app, path=WEBHOOK_PATH)
     
     # Set up startup and shutdown callbacks for the web app
-    setup_application(app, dp, bot=bot)
-    
-    # Register startup callback
-    app.on_startup.append(lambda app: on_startup(bot, WEBHOOK_URL))
-    
-    # Register shutdown callback
-    app.on_shutdown.append(lambda app: on_shutdown(bot))
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
 
 
 async def main():
     """Main function to run the bot"""
-    # Set up dispatcher and include the webhook setup params
-    dispatcher = dp
-    
     try:
         if WEBHOOK_MODE:
-            # Startup tasks
-            await on_startup(bot, WEBHOOK_URL)
-            
             # Start web application
             logger.info(f"Starting webhook on {WEBAPP_HOST}:{WEBAPP_PORT}")
-            try:
-                # SSL configuration for secure webhook
-                ssl_context = None
-                if USE_SSL and SSL_CERT_PATH and SSL_KEY_PATH:
-                    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-                    ssl_context.load_cert_chain(SSL_CERT_PATH, SSL_KEY_PATH)
-                    logger.info("SSL enabled for webhook server")
+            
+            # SSL configuration for secure webhook
+            ssl_context = None
+            if USE_SSL and SSL_CERT_PATH and SSL_KEY_PATH:
+                ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                ssl_context.load_cert_chain(SSL_CERT_PATH, SSL_KEY_PATH)
+                logger.info("SSL enabled for webhook server")
+            
+            # Use runner to properly handle application lifecycle
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, host=WEBAPP_HOST, port=int(WEBAPP_PORT), ssl_context=ssl_context)
+            
+            await site.start()
+            
+            # Keep the server running
+            while True:
+                await asyncio.sleep(3600)  # Sleep for 1 hour
                 
-                # Start web server
-                web.run_app(app, host=WEBAPP_HOST, port=WEBAPP_PORT, ssl_context=ssl_context)
-            finally:
-                # Shutdown tasks
-                await on_shutdown(bot)
         else:
             # Polling mode for local development
             # Startup tasks
-            await on_startup(bot)
+            await on_startup()
             
             try:
                 # Start polling
                 logger.info("Starting bot in polling mode")
-                await dispatcher.start_polling(bot)
+                await dp.start_polling(bot)
             finally:
                 # Shutdown tasks
-                await on_shutdown(bot)
+                await on_shutdown()
     except Exception as e:
         logger.error(f"Error running bot: {e}")
         # Ensure we close DB connection
