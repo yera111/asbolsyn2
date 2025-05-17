@@ -777,9 +777,16 @@ async def cmd_browse_meals(message: Message):
     # Filter meals in memory to ensure proper timezone handling
     meals = []
     for meal in all_meals:
-        # Ensure end time is timezone-aware and in Almaty timezone
-        pickup_end_time = ensure_timezone_aware(meal.pickup_end_time)
-        if pickup_end_time > current_time:
+        # Ensure end time is timezone-aware and explicitly convert to Almaty timezone
+        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+        current_almaty = get_current_almaty_time()
+        
+        # Debug output with explicit timezone info
+        logging.info(f"Meal '{meal.name}' end time: {pickup_end_time} ({pickup_end_time.tzinfo})")
+        logging.info(f"Current time: {current_almaty} ({current_almaty.tzinfo})")
+        logging.info(f"Comparing {pickup_end_time} > {current_almaty}: {pickup_end_time > current_almaty}")
+        
+        if pickup_end_time > current_almaty:
             meals.append(meal)
             logging.info(f"Including meal: {meal.name}, end time: {pickup_end_time}")
         else:
@@ -835,6 +842,14 @@ async def callback_view_meal(callback_query: CallbackQuery):
     
     if not meal:
         await callback_query.answer(TEXT["meal_not_found"])
+        return
+    
+    # Check if meal is expired using proper timezone comparison
+    pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+    current_almaty = get_current_almaty_time()
+    
+    if pickup_end_time <= current_almaty:
+        await callback_query.answer("К сожалению, время самовывоза для этого блюда уже истекло.")
         return
     
     # Track meal view metric
@@ -1191,10 +1206,20 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     # Filter meals in memory based on pickup time
     valid_meals = []
     for meal in all_meals:
-        # Ensure end time is timezone-aware and in Almaty timezone
-        pickup_end_time = ensure_timezone_aware(meal.pickup_end_time)
-        if pickup_end_time > current_time:
+        # Ensure end time is timezone-aware and explicitly convert to Almaty timezone
+        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+        current_almaty = get_current_almaty_time()
+        
+        # Debug output with explicit timezone info
+        logging.info(f"Nearby meal '{meal.name}' end time: {pickup_end_time} ({pickup_end_time.tzinfo})")
+        logging.info(f"Current time: {current_almaty} ({current_almaty.tzinfo})")
+        logging.info(f"Comparing {pickup_end_time} > {current_almaty}: {pickup_end_time > current_almaty}")
+        
+        if pickup_end_time > current_almaty:
             valid_meals.append(meal)
+            logging.info(f"Including nearby meal: {meal.name}, end time: {pickup_end_time}")
+        else:
+            logging.info(f"Excluding nearby meal: {meal.name}, end time: {pickup_end_time} (already passed)")
     
     if not valid_meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())

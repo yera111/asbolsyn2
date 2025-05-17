@@ -574,30 +574,23 @@ The application uses proper timezone handling to ensure that all datetime operat
 
 3. **Cross-Midnight Pickup Windows**
    - System correctly handles pickup windows that cross midnight
-   - When end time is earlier than start time, it's automatically adjusted to the next day
-   - Ensures proper functioning for evening/night pickup times (e.g., from 23:30 to 02:30)
+   - Automatically detects if end time is earlier than start time and adds a day
 
-4. **In-Memory Filtering for Timezone Safety**
-   - Database queries first fetch all potentially relevant meals
-   - In-memory filtering is then performed with properly timezone-aware datetimes
-   - Ensures consistent timezone comparison regardless of database timezone settings
-   - Prevents issues where database and application timezones might differ
-   - Provides more accurate filtering of meals based on pickup times
+4. **Consistent Timezone Comparison**
+   - All datetime comparisons explicitly convert both sides to Almaty timezone before comparison
+   - Meal expiration checks use timezone-aware comparisons to avoid false expirations
+   - Each comparison is logged with timezone information for easier debugging
+   - Time comparison methodology is consistent across all features:
+     - Browse meals view
+     - Nearby meals search
+     - Meal detail view
+     - Order management
 
-5. **Consistent Time Display**
-   - All displayed times are explicitly converted to Almaty timezone before formatting
-   - Two-step conversion process ensures accuracy: first ensure timezone-awareness, then convert to Almaty timezone
-   - Special handling for meal display in various contexts:
-     - Full date-time format for meal details and creation confirmation
-     - Time-only format for meal listings
-   - Ensures users see pickup times in their local Almaty timezone regardless of server timezone
-
-6. **Logging and Debugging**
-   - Extensive logging of datetime operations for troubleshooting
-   - Clear logging of meal inclusion/exclusion decisions during filtering
-   - Timestamp outputs in logs include timezone information
-   - Logging of formatted times to verify correct timezone display
-   - Helps diagnose timezone-related issues quickly
+5. **Explicit Timezone Conversion**
+   - Every datetime value is explicitly converted to Almaty timezone before display or comparison
+   - Prevents inconsistencies between stored times and displayed/filtered times
+   - Functions chain `ensure_timezone_aware()` and `to_almaty_time()` to guarantee correctness
+   - Comprehensive logging tracks timezone information throughout the application
 
 ## Meal Expiration Management
 

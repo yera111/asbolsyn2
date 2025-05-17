@@ -601,3 +601,16 @@
   - Improved verification of saved data to ensure dates aren't inadvertently shifted
   - Fixed issue where meals were showing with tomorrow's date in the database
   - Ensured consistency between entered pickup windows and stored values
+
+### Step 13.6: Timezone Comparison Bug Fix for Meal Expiration ✅
+- **Completed on:** August 8, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical bug where meals were incorrectly showing as expired even though they were still valid
+  - Improved timezone comparison in browse_meals, process_meals_nearby, and view_meal functions
+  - Added explicit conversion of end times to Almaty timezone before comparison
+  - Added detailed logging to track timezone comparisons for easier debugging
+  - Added verification before showing meal details to prevent viewing expired meals
+  - Fixed an issue where meals with pickup time until 23:30 were incorrectly marked as expired at 22:34
+  - Ensured consistent comparison of times with matching timezone information
+  - Added user-friendly error message when attempting to view an expired meal
