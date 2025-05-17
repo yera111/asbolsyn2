@@ -614,3 +614,14 @@
   - Fixed an issue where meals with pickup time until 23:30 were incorrectly marked as expired at 22:34
   - Ensured consistent comparison of times with matching timezone information
   - Added user-friendly error message when attempting to view an expired meal
+
+### Step 13.7: Timezone Offset Correction ✅
+- **Completed on:** August 8, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical configuration issue where Almaty timezone offset was incorrectly set to UTC+6
+  - Updated timezone configuration to correctly reflect that Almaty is in UTC+5
+  - This resolves a 1-hour discrepancy where system showed 23:38 when the actual Almaty time was 22:41
+  - Corrected the TIMEZONE_OFFSET_HOURS value in config.py
+  - Fixed the root cause of time-related display and filtering issues
+  - Ensured consistent timezone handling across the application

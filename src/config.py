@@ -58,7 +58,7 @@ DEFAULT_LANGUAGE = "ru"
 
 # Timezone configuration
 ALMATY_TIMEZONE = pytz.timezone("Asia/Almaty")
-TIMEZONE_OFFSET_HOURS = 6  # Almaty is UTC+6
+TIMEZONE_OFFSET_HOURS = 5  # Almaty is UTC+5
 
 # Payment Gateway configuration (for testing initially)
 PAYMENT_GATEWAY_ENABLED = os.getenv("PAYMENT_GATEWAY_ENABLED", "True").lower() in ["true", "1", "yes"]

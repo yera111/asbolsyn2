@@ -562,7 +562,7 @@ The application includes a comprehensive end-to-end testing framework to validat
 The application uses proper timezone handling to ensure that all datetime operations are consistent and user-friendly:
 
 1. **Timezone Configuration**
-   - Configured "Asia/Almaty" timezone (UTC+6) as the base timezone for the application
+   - Configured "Asia/Almaty" timezone (UTC+5) as the base timezone for the application
    - All timestamps are stored and processed in this timezone
    - Ensures meal pickup times are correctly displayed and filtered
 
