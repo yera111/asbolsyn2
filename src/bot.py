@@ -490,14 +490,16 @@ async def process_meal_pickup_start(message: Message, state: FSMContext):
         now = get_current_almaty_time()
         pickup_start = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
         
-        # If the time is in the past, assume it's for tomorrow
-        if pickup_start < now:
+        # If the time is in the past, assume it's for today but later (not tomorrow)
+        # We'll only advance to tomorrow if the time is more than 12 hours in the past
+        if pickup_start < now and (now - pickup_start).total_seconds() > 43200:  # 12 hours
             pickup_start = pickup_start + datetime.timedelta(days=1)
             
         # Log the time information for debugging
         logging.info(f"Pickup start time: {pickup_start} (Almaty timezone)")
+        logging.info(f"Current time: {now} (Almaty timezone)")
         
-        # Save the pickup start time
+        # Save the pickup start time - ensuring it's in Almaty timezone
         await state.update_data(
             pickup_start_str=time_str,
             pickup_start=pickup_start
@@ -520,30 +522,24 @@ async def process_meal_pickup_end(message: Message, state: FSMContext):
         
         if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
             raise ValueError("Invalid time values")
-            
+              
         # Get the pickup start time from state
         data = await state.get_data()
         pickup_start = data.get('pickup_start')
         
-        # Create datetime object for today with the specified time in Almaty timezone
-        now = get_current_almaty_time()
-        pickup_end = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-        
-        # Ensure pickup_end is on the same day as pickup_start initially
-        pickup_end = pickup_end.replace(
-            year=pickup_start.year,
-            month=pickup_start.month,
-            day=pickup_start.day
-        )
+        # Create datetime object for the same day as pickup_start
+        pickup_end = pickup_start.replace(hour=hours, minute=minutes, second=0, microsecond=0)
         
         # Ensure end time is after start time
         if pickup_end <= pickup_start:
-            # If end time is earlier, assume it's for the next day
+            # If end time is earlier on the same day, assume it's for the next day
+            # But only advance by 1 day to avoid skipping ahead too far
             pickup_end = pickup_end + datetime.timedelta(days=1)
         
         # Log the time information for debugging
         logging.info(f"Pickup end time: {pickup_end} (Almaty timezone)")
         logging.info(f"Pickup window: {pickup_start} - {pickup_end}")
+        logging.info(f"Date comparison: start day={pickup_start.day}, end day={pickup_end.day}")
         
         # Save the pickup end time
         await state.update_data(
@@ -596,18 +592,17 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     # Create Meal object
     vendor = await Vendor.filter(telegram_id=message.from_user.id).first()
     
-    # Get the previously stored pickup times
+    # Get the previously stored pickup times - these are already in Almaty timezone
     pickup_start_time = data.get("pickup_start")
     pickup_end_time = data.get("pickup_end")
     
-    # Ensure both pickup times are timezone-aware
-    pickup_start_time = ensure_timezone_aware(pickup_start_time)
-    pickup_end_time = ensure_timezone_aware(pickup_end_time)
+    # Log the actual datetime objects with timezone info for debugging
+    logging.info(f"About to create meal with pickup times (raw objects):")
+    logging.info(f"Start time: {pickup_start_time} (tzinfo: {pickup_start_time.tzinfo})")
+    logging.info(f"End time: {pickup_end_time} (tzinfo: {pickup_end_time.tzinfo})")
+    logging.info(f"Start day: {pickup_start_time.day}, End day: {pickup_end_time.day}")
     
-    # Log the time information for debugging
-    logging.info(f"Creating meal with pickup window: {pickup_start_time} - {pickup_end_time}")
-    
-    # Create meal record
+    # Create meal record, ensuring the times are saved with their timezone info preserved
     meal = await Meal.create(
         vendor=vendor,
         name=data.get("name"),
@@ -621,6 +616,12 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
         location_longitude=longitude,
         is_active=True
     )
+    
+    # Verify the saved timestamps match what we intended
+    saved_meal = await Meal.filter(id=meal.id).first()
+    logging.info(f"Saved meal pickup times:")
+    logging.info(f"Saved start: {saved_meal.pickup_start_time} (tzinfo: {saved_meal.pickup_start_time.tzinfo})")
+    logging.info(f"Saved end: {saved_meal.pickup_end_time} (tzinfo: {saved_meal.pickup_end_time.tzinfo})")
     
     # Track meal creation metric
     await track_metric(
@@ -639,16 +640,16 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     # Clear the state
     await state.clear()
     
-    # Format pickup times
+    # Format pickup times - convert to Almaty timezone for display
     pickup_start_time = to_almaty_time(ensure_timezone_aware(meal.pickup_start_time))
     pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
     
-    # Format for display with proper timezone
+    # Format for display
     pickup_start_format = pickup_start_time.strftime("%d.%m.%Y %H:%M")
     pickup_end_format = pickup_end_time.strftime("%d.%m.%Y %H:%M")
     
     # Log the formatted times for debugging
-    logging.info(f"Meal created with pickup window (Almaty): {pickup_start_format} - {pickup_end_format}")
+    logging.info(f"Displaying meal with pickup window (Almaty): {pickup_start_format} - {pickup_end_format}")
     
     # Notify the vendor
     await message.answer(

@@ -588,3 +588,16 @@
   - Ensured consistent time display across the entire application
   - Added detailed logging of formatted times for easier debugging
   - Ensured proper timezone conversion before formatting all displayed times
+
+### Step 13.5: Date Handling in Timezone Conversion Fix ✅
+- **Completed on:** August 7, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical bug where meal pickup dates were incorrectly shifted to the next day during creation
+  - Improved logic for determining if a time should be for today or tomorrow
+  - Added a "12-hour rule" to avoid unnecessarily pushing pickup times to the next day
+  - Modified the pickup_end time creation to inherit the date from pickup_start time directly
+  - Added extensive logging to trace date/time values throughout the creation process
+  - Improved verification of saved data to ensure dates aren't inadvertently shifted
+  - Fixed issue where meals were showing with tomorrow's date in the database
+  - Ensured consistency between entered pickup windows and stored values
