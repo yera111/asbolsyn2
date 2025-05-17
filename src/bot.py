@@ -481,7 +481,14 @@ async def process_meal_pickup_start(message: Message, state: FSMContext):
             
         # Create datetime object for today with the specified time in Almaty timezone
         now = get_current_almaty_time()
-        pickup_start = now.replace(hour=hours, minute=minutes)
+        pickup_start = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+        
+        # If the time is in the past, assume it's for tomorrow
+        if pickup_start < now:
+            pickup_start = pickup_start + datetime.timedelta(days=1)
+            
+        # Log the time information for debugging
+        logging.info(f"Pickup start time: {pickup_start} (Almaty timezone)")
         
         # Save the pickup start time
         await state.update_data(
@@ -507,18 +514,29 @@ async def process_meal_pickup_end(message: Message, state: FSMContext):
         if hours < 0 or hours > 23 or minutes < 0 or minutes > 59:
             raise ValueError("Invalid time values")
             
-        # Create datetime object for today with the specified time in Almaty timezone
-        now = get_current_almaty_time()
-        pickup_end = now.replace(hour=hours, minute=minutes)
-        
         # Get the pickup start time from state
         data = await state.get_data()
         pickup_start = data.get('pickup_start')
         
+        # Create datetime object for today with the specified time in Almaty timezone
+        now = get_current_almaty_time()
+        pickup_end = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+        
+        # Ensure pickup_end is on the same day as pickup_start initially
+        pickup_end = pickup_end.replace(
+            year=pickup_start.year,
+            month=pickup_start.month,
+            day=pickup_start.day
+        )
+        
         # Ensure end time is after start time
         if pickup_end <= pickup_start:
             # If end time is earlier, assume it's for the next day
-            pickup_end = pickup_end.replace(day=pickup_end.day + 1)
+            pickup_end = pickup_end + datetime.timedelta(days=1)
+        
+        # Log the time information for debugging
+        logging.info(f"Pickup end time: {pickup_end} (Almaty timezone)")
+        logging.info(f"Pickup window: {pickup_start} - {pickup_end}")
         
         # Save the pickup end time
         await state.update_data(
@@ -571,48 +589,16 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     # Create Meal object
     vendor = await Vendor.filter(telegram_id=message.from_user.id).first()
     
-    # Check if today's date should be used
-    is_today = data.get("pickup_start_is_today", True)
-    is_tomorrow = data.get("pickup_start_is_tomorrow", False)
+    # Get the previously stored pickup times
+    pickup_start_time = data.get("pickup_start")
+    pickup_end_time = data.get("pickup_end")
     
-    now = get_current_almaty_time()
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Ensure both pickup times are timezone-aware
+    pickup_start_time = ensure_timezone_aware(pickup_start_time)
+    pickup_end_time = ensure_timezone_aware(pickup_end_time)
     
-    # Parse pickup start time
-    pickup_start_time_str = data.get("pickup_start")
-    # Check if pickup_start_time_str is a datetime object or a string
-    if isinstance(pickup_start_time_str, datetime.datetime):
-        # If it's a datetime, extract hour and minute directly
-        hour = pickup_start_time_str.hour
-        minute = pickup_start_time_str.minute
-    else:
-        # If it's a string, split it as before
-        hour, minute = map(int, pickup_start_time_str.split(":"))
-    
-    if is_today:
-        pickup_start_time = today.replace(hour=hour, minute=minute)
-    elif is_tomorrow:
-        pickup_start_time = today.replace(hour=hour, minute=minute) + datetime.timedelta(days=1)
-    else:
-        # Fallback to today
-        pickup_start_time = today.replace(hour=hour, minute=minute)
-    
-    # Parse pickup end time
-    pickup_end_time_str = data.get("pickup_end")
-    # Check if pickup_end_time_str is a datetime object or a string
-    if isinstance(pickup_end_time_str, datetime.datetime):
-        # If it's a datetime, extract hour and minute directly
-        hour = pickup_end_time_str.hour
-        minute = pickup_end_time_str.minute
-    else:
-        # If it's a string, split it as before
-        hour, minute = map(int, pickup_end_time_str.split(":"))
-    
-    pickup_end_time = pickup_start_time.replace(hour=hour, minute=minute)
-    
-    # If end time is earlier than start time, add 1 day to end time
-    if pickup_end_time <= pickup_start_time:
-        pickup_end_time += datetime.timedelta(days=1)
+    # Log the time information for debugging
+    logging.info(f"Creating meal with pickup window: {pickup_start_time} - {pickup_end_time}")
     
     # Create meal record
     meal = await Meal.create(
@@ -647,8 +633,8 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     await state.clear()
     
     # Format pickup times
-    pickup_start_format = format_pickup_time(pickup_start_time)
-    pickup_end_format = format_pickup_time(pickup_end_time)
+    pickup_start_format = format_pickup_time(meal.pickup_start_time)
+    pickup_end_format = format_pickup_time(meal.pickup_end_time)
     
     # Notify the vendor
     await message.answer(
@@ -759,12 +745,23 @@ async def cmd_browse_meals(message: Message):
     )
     
     # Get all active meals with quantity > 0
+    # Use the current time in Almaty timezone for filtering
     current_time = get_current_almaty_time()
-    meals = await Meal.filter(
-        is_active=True,
-        quantity__gt=0,
-        pickup_end_time__gt=current_time
-    ).prefetch_related('vendor').order_by('-created_at')
+    logging.info(f"Current Almaty time for meal filtering: {current_time}")
+    
+    # Get all meals first, then filter in memory to ensure proper timezone handling
+    all_meals = await Meal.filter(is_active=True, quantity__gt=0).prefetch_related('vendor').order_by('-created_at')
+    
+    # Filter meals in memory to ensure proper timezone handling
+    meals = []
+    for meal in all_meals:
+        # Ensure end time is timezone-aware and in Almaty timezone
+        pickup_end_time = ensure_timezone_aware(meal.pickup_end_time)
+        if pickup_end_time > current_time:
+            meals.append(meal)
+            logging.info(f"Including meal: {meal.name}, end time: {pickup_end_time}")
+        else:
+            logging.info(f"Excluding meal: {meal.name}, end time: {pickup_end_time} (already passed)")
     
     if not meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
@@ -1161,13 +1158,23 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     
     # Get all active meals with quantity > 0
     current_time = get_current_almaty_time()
-    meals = await Meal.filter(
+    logging.info(f"Current Almaty time for nearby meal filtering: {current_time}")
+    
+    # Get all meals first, then filter in memory to ensure proper timezone handling
+    all_meals = await Meal.filter(
         is_active=True,
-        quantity__gt=0,
-        pickup_end_time__gt=current_time
+        quantity__gt=0
     ).prefetch_related('vendor')
     
-    if not meals:
+    # Filter meals in memory based on pickup time
+    valid_meals = []
+    for meal in all_meals:
+        # Ensure end time is timezone-aware and in Almaty timezone
+        pickup_end_time = ensure_timezone_aware(meal.pickup_end_time)
+        if pickup_end_time > current_time:
+            valid_meals.append(meal)
+    
+    if not valid_meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
         return
     
@@ -1175,7 +1182,7 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     max_distance = 10.0
     
     # Filter and sort meals by distance
-    nearby_meals = await filter_meals_by_distance(meals, user_lat, user_lon, max_distance)
+    nearby_meals = await filter_meals_by_distance(valid_meals, user_lat, user_lon, max_distance)
     
     if not nearby_meals:
         await message.answer(

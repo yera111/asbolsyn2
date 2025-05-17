@@ -577,6 +577,19 @@ The application uses proper timezone handling to ensure that all datetime operat
    - When end time is earlier than start time, it's automatically adjusted to the next day
    - Ensures proper functioning for evening/night pickup times (e.g., from 23:30 to 02:30)
 
+4. **In-Memory Filtering for Timezone Safety**
+   - Database queries first fetch all potentially relevant meals
+   - In-memory filtering is then performed with properly timezone-aware datetimes
+   - Ensures consistent timezone comparison regardless of database timezone settings
+   - Prevents issues where database and application timezones might differ
+   - Provides more accurate filtering of meals based on pickup times
+
+5. **Logging and Debugging**
+   - Extensive logging of datetime operations for troubleshooting
+   - Clear logging of meal inclusion/exclusion decisions during filtering
+   - Timestamp outputs in logs include timezone information
+   - Helps diagnose timezone-related issues quickly
+
 ## Meal Expiration Management
 
 The application implements automatic management of expired meals:
