@@ -538,3 +538,28 @@
 - Create initial migration for the existing schema
 - Add migration step to deployment workflow
 - Update developer documentation with migration instructions
+
+## Phase 13: Bug Fixes and Railway Deployment
+
+### Step 13.1: Timezone Display Bug Fix ✅
+- **Completed on:** August 5, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical bug where pickup times were displayed in the wrong timezone
+  - Updated `cmd_my_meals` handler to properly use `ensure_timezone_aware` before formatting times
+  - Ensured consistent timezone handling across all datetime display functions
+  - Fixed issue where "21:30-22:30" in Almaty time was displaying as "15:30-16:30" (UTC time)
+  - Improved and standardized the time display format throughout the application
+  - Verified that all times are now correctly displayed in the Almaty timezone (UTC+6)
+
+### Step 13.2: Railway Deployment Preparation ✅
+- **Completed on:** August 5, 2025
+- **Status:** Completed
+- **Summary:**
+  - Created `railway.json` configuration file for Railway deployment
+  - Added `Procfile` for proper process management on Railway
+  - Updated `README.md` with detailed Railway deployment instructions
+  - Configured application to use ASGI server (uvicorn) with multiple workers
+  - Added restart policy for improved reliability
+  - Documented the environment variables needed for Railway deployment
+  - Created a deployment guide with step-by-step instructions

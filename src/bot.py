@@ -688,9 +688,9 @@ async def cmd_my_meals(message: Message):
     response = TEXT["my_meals_list_header"]
     
     for i, meal in enumerate(meals, 1):
-        # Format pickup times as strings
-        pickup_start = meal.pickup_start_time.strftime("%H:%M")
-        pickup_end = meal.pickup_end_time.strftime("%H:%M")
+        # Format pickup times using format_pickup_time to ensure correct timezone
+        pickup_start = ensure_timezone_aware(meal.pickup_start_time).strftime("%H:%M")
+        pickup_end = ensure_timezone_aware(meal.pickup_end_time).strftime("%H:%M")
         
         response += TEXT["my_meals_item"].format(
             id=i,

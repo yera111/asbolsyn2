@@ -447,7 +447,7 @@ Planned features for future phases include:
 The application is designed to be deployed to a Platform-as-a-Service (PaaS) provider, with the following key components:
 
 1. **Web Service**
-   - Deployed as a web service on a PaaS platform (e.g., Render)
+   - Deployed as a web service on a PaaS platform (Railway or Render)
    - Uses an ASGI server (uvicorn) for optimal async performance
    - Configured with 2 workers to handle concurrent requests efficiently
    - Direct connection between uvicorn and the aiohttp application for reduced latency
@@ -499,10 +499,20 @@ The deployment workflow follows these steps:
    - Multiple workers (2) for improved concurrency and reliability
    - Webhook automatically configured on application startup
 
-4. **Monitoring & Maintenance**
+4. **Railway Deployment**
+   - Configured using `railway.json` for Railway-specific settings
+   - Uses `Procfile` for process management
+   - Configured with auto-restart on failure
+   - Simple one-command deployment using Railway CLI
+   - Supports both automatic and manual deployments
+   - Direct integration with PostgreSQL database service on Railway
+   - Automatic HTTPS handling for webhook security
+
+5. **Monitoring & Maintenance**
    - Logging configured for production environment
    - Error handling for webhook processing
    - Graceful shutdown procedures to maintain database integrity
+   - Railway dashboard for monitoring application health
 
 ## End-to-End Testing Approach
 
