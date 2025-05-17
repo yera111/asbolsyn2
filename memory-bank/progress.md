@@ -576,3 +576,15 @@
   - Fixed an issue where pickup times were not properly saved with timezone information
   - Improved datetime handling when creating pickup windows for new meals
   - Fixed the "no meals available" issue by ensuring proper timezone comparison
+
+### Step 13.4: Timezone Display Bug Fix ✅
+- **Completed on:** August 7, 2025
+- **Status:** Completed
+- **Summary:**
+  - Fixed critical bug where pickup times were being displayed in UTC instead of Almaty time (UTC+6)
+  - Enhanced the `format_pickup_time` function to properly convert times to Almaty timezone
+  - Updated meal display in meal creation success message to show correct local times
+  - Fixed the `cmd_my_meals` function to properly format and display pickup times
+  - Ensured consistent time display across the entire application
+  - Added detailed logging of formatted times for easier debugging
+  - Ensured proper timezone conversion before formatting all displayed times

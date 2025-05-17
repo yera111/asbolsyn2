@@ -570,7 +570,7 @@ The application uses proper timezone handling to ensure that all datetime operat
    - `get_current_almaty_time()`: Returns the current time in Almaty timezone
    - `to_almaty_time(dt)`: Converts any datetime to Almaty timezone
    - `ensure_timezone_aware(dt)`: Makes naive datetimes timezone-aware
-   - `format_pickup_time(dt)`: Formats datetimes for display
+   - `format_pickup_time(dt)`: Formats datetimes for display with proper timezone conversion
 
 3. **Cross-Midnight Pickup Windows**
    - System correctly handles pickup windows that cross midnight
@@ -584,10 +584,19 @@ The application uses proper timezone handling to ensure that all datetime operat
    - Prevents issues where database and application timezones might differ
    - Provides more accurate filtering of meals based on pickup times
 
-5. **Logging and Debugging**
+5. **Consistent Time Display**
+   - All displayed times are explicitly converted to Almaty timezone before formatting
+   - Two-step conversion process ensures accuracy: first ensure timezone-awareness, then convert to Almaty timezone
+   - Special handling for meal display in various contexts:
+     - Full date-time format for meal details and creation confirmation
+     - Time-only format for meal listings
+   - Ensures users see pickup times in their local Almaty timezone regardless of server timezone
+
+6. **Logging and Debugging**
    - Extensive logging of datetime operations for troubleshooting
    - Clear logging of meal inclusion/exclusion decisions during filtering
    - Timestamp outputs in logs include timezone information
+   - Logging of formatted times to verify correct timezone display
    - Helps diagnose timezone-related issues quickly
 
 ## Meal Expiration Management

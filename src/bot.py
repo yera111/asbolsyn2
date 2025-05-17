@@ -56,7 +56,14 @@ def ensure_timezone_aware(dt):
 
 def format_pickup_time(dt):
     """Format a datetime for display, ensuring it's in Almaty timezone"""
+    if dt is None:
+        return None
+    # First make sure the datetime is timezone-aware
     dt = ensure_timezone_aware(dt)
+    # Then explicitly convert to Almaty timezone
+    dt = to_almaty_time(dt)
+    # Log for debugging
+    logging.info(f"Formatting time: {dt} (with tzinfo: {dt.tzinfo})")
     return dt.strftime("%d.%m.%Y %H:%M")
 
 async def save_order_with_timezone(order):
@@ -633,8 +640,15 @@ async def process_meal_location_coords(message: Message, state: FSMContext):
     await state.clear()
     
     # Format pickup times
-    pickup_start_format = format_pickup_time(meal.pickup_start_time)
-    pickup_end_format = format_pickup_time(meal.pickup_end_time)
+    pickup_start_time = to_almaty_time(ensure_timezone_aware(meal.pickup_start_time))
+    pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+    
+    # Format for display with proper timezone
+    pickup_start_format = pickup_start_time.strftime("%d.%m.%Y %H:%M")
+    pickup_end_format = pickup_end_time.strftime("%d.%m.%Y %H:%M")
+    
+    # Log the formatted times for debugging
+    logging.info(f"Meal created with pickup window (Almaty): {pickup_start_format} - {pickup_end_format}")
     
     # Notify the vendor
     await message.answer(
@@ -675,8 +689,15 @@ async def cmd_my_meals(message: Message):
     
     for i, meal in enumerate(meals, 1):
         # Format pickup times using format_pickup_time to ensure correct timezone
-        pickup_start = ensure_timezone_aware(meal.pickup_start_time).strftime("%H:%M")
-        pickup_end = ensure_timezone_aware(meal.pickup_end_time).strftime("%H:%M")
+        pickup_start_time = to_almaty_time(ensure_timezone_aware(meal.pickup_start_time))
+        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+        
+        # Format as time only (HH:MM)
+        pickup_start = pickup_start_time.strftime("%H:%M")
+        pickup_end = pickup_end_time.strftime("%H:%M")
+        
+        # Log the times for debugging
+        logging.info(f"Meal {meal.id}: Pickup window (Almaty time): {pickup_start}-{pickup_end}")
         
         response += TEXT["my_meals_item"].format(
             id=i,
