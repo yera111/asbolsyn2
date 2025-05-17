@@ -57,8 +57,9 @@ if TESTING:
 DEFAULT_LANGUAGE = "ru"
 
 # Timezone configuration
-ALMATY_TIMEZONE = pytz.timezone("Asia/Almaty")
+# Use a fixed UTC+5 timezone instead of relying on the named timezone
 TIMEZONE_OFFSET_HOURS = 5  # Almaty is UTC+5
+ALMATY_TIMEZONE = pytz.FixedOffset(TIMEZONE_OFFSET_HOURS * 60)  # Convert hours to minutes
 
 # Payment Gateway configuration (for testing initially)
 PAYMENT_GATEWAY_ENABLED = os.getenv("PAYMENT_GATEWAY_ENABLED", "True").lower() in ["true", "1", "yes"]
@@ -87,5 +88,5 @@ TORTOISE_ORM = {
         },
     },
     "use_tz": True,
-    "timezone": "Asia/Almaty"
+    "timezone": f"Etc/GMT-{TIMEZONE_OFFSET_HOURS}"  # Etc/GMT-5 is UTC+5
 }
