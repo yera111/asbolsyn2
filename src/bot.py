@@ -71,6 +71,17 @@ def format_pickup_time(dt):
     logging.info(f"Formatting time: {dt} (with tzinfo: {dt.tzinfo})")
     return dt.strftime("%d.%m.%Y %H:%M")
 
+def escape_markdown(text):
+    """Escape special characters for Telegram Markdown parsing"""
+    if not text:
+        return text
+    # Escape special Markdown characters
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    escaped_text = str(text)
+    for char in special_chars:
+        escaped_text = escaped_text.replace(char, f'\\{char}')
+    return escaped_text
+
 async def save_order_with_timezone(order):
     """Save an order, ensuring all datetime fields are timezone-aware"""
     # Make all datetime fields timezone-aware
@@ -82,7 +93,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)\n/cancel_order ID - Отменить застрявший заказ (только для администраторов)\n\n📊 Команды аналитики (только для администраторов):\n/metrics - Основная панель метрик\n/metrics_detailed [дни] - Детальный отчет\n/analytics - Расширенная аналитика",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -2236,7 +2247,9 @@ async def cmd_metrics_detailed(message: Message):
         if most_viewed:
             detailed_text += "\n*🔥 ТОП ПРОСМАТРИВАЕМЫХ БЛЮД:*\n"
             for i, (meal, view_count) in enumerate(most_viewed, 1):
-                detailed_text += f"{i}. {meal.name} (`{view_count}` просмотров)\n"
+                # Escape meal name to prevent Markdown parsing errors
+                escaped_meal_name = escape_markdown(meal.name)
+                detailed_text += f"{i}\\. {escaped_meal_name} (`{view_count}` просмотров)\n"
         
         await message.answer(detailed_text, parse_mode="Markdown")
         
@@ -2372,8 +2385,10 @@ async def cmd_analytics(message: Message):
             if vendor_performance["vendor_performance"]:
                 vendor_text += "*🏆 ТОП-5 ПОСТАВЩИКОВ ПО ВЫРУЧКЕ:*\n"
                 for i, vendor in enumerate(vendor_performance["vendor_performance"][:5], 1):
+                    # Escape vendor name to prevent Markdown parsing errors
+                    escaped_vendor_name = escape_markdown(vendor['vendor_name'])
                     vendor_text += (
-                        f"{i}. {vendor['vendor_name']}\n"
+                        f"{i}\\. {escaped_vendor_name}\n"
                         f"   💰 Выручка: `{vendor['total_revenue']} тг`\n"
                         f"   🍽 Блюд: `{vendor['total_meals']}`\n"
                         f"   📦 Заказов: `{vendor['paid_orders']}`\n"
