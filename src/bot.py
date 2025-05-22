@@ -1768,7 +1768,7 @@ async def cmd_metrics(message: Message):
         
         metrics_text = (
             "📊 *ПАНЕЛЬ МЕТРИК AS BOLSYN*\n"
-            "=" * 30 + "\n\n"
+            "━" * 30 + "\n\n"
             "📈 *ОБЩАЯ СТАТИСТИКА*\n"
             f"👥 Пользователей: `{overview.get('total_users', 0)}`\n"
             f"🏪 Поставщиков: `{overview.get('approved_vendors', 0)}`/`{overview.get('total_vendors', 0)}` (одобрено/всего)\n"
@@ -1805,8 +1805,13 @@ async def cmd_metrics(message: Message):
         # Send the formatted metrics message
         await message.answer(metrics_text, parse_mode="Markdown")
         
-        # Generate detailed reports for different time periods
-        await send_detailed_metrics_reports(message)
+        # Send a simple usage note instead of automatic detailed reports
+        usage_note = (
+            "💡 *Для детальных отчетов используйте:*\n"
+            "`/metrics_detailed [дни]` - детальный отчет\n"
+            "`/analytics` - расширенная аналитика"
+        )
+        await message.answer(usage_note, parse_mode="Markdown")
         
     except Exception as e:
         logging.error(f"Error generating metrics: {e}")
@@ -1845,7 +1850,7 @@ async def send_detailed_metrics_reports(message: Message):
 
 def format_metrics_report(title: str, report: Dict) -> str:
     """Format a metrics report into readable text"""
-    report_text = f"*{title}*\n" + "=" * len(title) + "\n\n"
+    report_text = f"*{title}*\n" + "━" * len(title) + "\n\n"
     
     # Time period
     time_period = report.get("time_period", {})
@@ -1907,7 +1912,7 @@ def format_metrics_report(title: str, report: Dict) -> str:
 
 async def generate_trend_analysis(weekly_report: Dict, monthly_report: Dict) -> str:
     """Generate trend analysis comparing weekly vs monthly data"""
-    trend_text = "*📈 АНАЛИЗ ТРЕНДОВ*\n" + "=" * 15 + "\n\n"
+    trend_text = "*📈 АНАЛИЗ ТРЕНДОВ*\n" + "━" * 15 + "\n\n"
     
     try:
         # Get weekly and monthly counts
@@ -2287,7 +2292,7 @@ async def cmd_analytics(message: Message):
         peak_hours = await get_peak_hours_analysis()
         if "error" not in peak_hours:
             peak_text = "*⏰ АНАЛИЗ ПИКОВЫХ ЧАСОВ*\n"
-            peak_text += "=" * 25 + "\n\n"
+            peak_text += "━" * 25 + "\n\n"
             
             if peak_hours["total_activity"] > 0:
                 peak_text += "*🔥 ТОП-3 САМЫХ АКТИВНЫХ ЧАСА:*\n"
@@ -2311,7 +2316,7 @@ async def cmd_analytics(message: Message):
         user_patterns = await get_user_activity_patterns()
         if "error" not in user_patterns:
             patterns_text = "*👥 АНАЛИЗ АКТИВНОСТИ ПОЛЬЗОВАТЕЛЕЙ*\n"
-            patterns_text += "=" * 35 + "\n\n"
+            patterns_text += "━" * 35 + "\n\n"
             
             patterns_text += f"👤 Активных пользователей: `{user_patterns['total_users_active']}`\n"
             patterns_text += f"📊 Среднее действий/пользователь: `{user_patterns['avg_actions_per_user']}`\n"
@@ -2333,7 +2338,7 @@ async def cmd_analytics(message: Message):
         funnel = await get_conversion_funnel_detailed()
         if "error" not in funnel:
             funnel_text = "*🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ВОРОНКИ*\n"
-            funnel_text += "=" * 30 + "\n\n"
+            funnel_text += "━" * 30 + "\n\n"
             
             counts = funnel["funnel_counts"]
             conversions = funnel["conversions"]
@@ -2374,7 +2379,7 @@ async def cmd_analytics(message: Message):
         vendor_performance = await get_vendor_performance_metrics()
         if "error" not in vendor_performance:
             vendor_text = "*🏪 ПРОИЗВОДИТЕЛЬНОСТЬ ПОСТАВЩИКОВ*\n"
-            vendor_text += "=" * 38 + "\n\n"
+            vendor_text += "━" * 38 + "\n\n"
             
             summary = vendor_performance["summary"]
             vendor_text += f"🏪 Всего поставщиков: `{summary['total_vendors']}`\n"
