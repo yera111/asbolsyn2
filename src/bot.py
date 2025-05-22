@@ -1767,51 +1767,51 @@ async def cmd_metrics(message: Message):
         overview = dashboard.get("overview", {})
         
         metrics_text = (
-            "📊 *ПАНЕЛЬ МЕТРИК AS BOLSYN*\n"
+            "📊 ПАНЕЛЬ МЕТРИК AS BOLSYN\n"
             "━" * 30 + "\n\n"
-            "📈 *ОБЩАЯ СТАТИСТИКА*\n"
-            f"👥 Пользователей: `{overview.get('total_users', 0)}`\n"
-            f"🏪 Поставщиков: `{overview.get('approved_vendors', 0)}`/`{overview.get('total_vendors', 0)}` (одобрено/всего)\n"
-            f"🍽 Активных блюд: `{overview.get('active_meals', 0)}`\n"
-            f"📋 Всего блюд: `{overview.get('total_meals_ever', 0)}`\n"
-            f"💰 Оплаченных заказов: `{overview.get('paid_orders', 0)}`\n"
-            f"✅ Завершенных заказов: `{overview.get('completed_orders', 0)}`\n"
-            f"💎 Общий оборот: `{overview.get('gmv_total', 0)} тг`\n\n"
+            "📈 ОБЩАЯ СТАТИСТИКА\n"
+            f"👥 Пользователей: {overview.get('total_users', 0)}\n"
+            f"🏪 Поставщиков: {overview.get('approved_vendors', 0)}/{overview.get('total_vendors', 0)} (одобрено/всего)\n"
+            f"🍽 Активных блюд: {overview.get('active_meals', 0)}\n"
+            f"📋 Всего блюд: {overview.get('total_meals_ever', 0)}\n"
+            f"💰 Оплаченных заказов: {overview.get('paid_orders', 0)}\n"
+            f"✅ Завершенных заказов: {overview.get('completed_orders', 0)}\n"
+            f"💎 Общий оборот: {overview.get('gmv_total', 0)} тг\n\n"
         )
         
         # Add conversion rates from the last 7 days
         conversion = dashboard.get("weekly", {}).get("conversion_rates", {})
         if isinstance(conversion, dict):
             metrics_text += (
-                "🎯 *КОНВЕРСИИ (7 ДНЕЙ)*\n"
-                f"🔍 Просмотр → Детали: `{conversion.get('browse_to_view', 0)}%`\n"
-                f"👆 Детали → Заказ: `{conversion.get('view_to_order', 0)}%`\n"
-                f"💳 Заказ → Оплата: `{conversion.get('order_to_payment', 0)}%`\n"
-                f"🎉 Общая конверсия: `{conversion.get('overall_browse_to_purchase', 0)}%`\n\n"
+                "🎯 КОНВЕРСИИ (7 ДНЕЙ)\n"
+                f"🔍 Просмотр → Детали: {conversion.get('browse_to_view', 0)}%\n"
+                f"👆 Детали → Заказ: {conversion.get('view_to_order', 0)}%\n"
+                f"💳 Заказ → Оплата: {conversion.get('order_to_payment', 0)}%\n"
+                f"🎉 Общая конверсия: {conversion.get('overall_browse_to_purchase', 0)}%\n\n"
             )
         
         # Calculate additional insights
         if overview.get('total_vendors', 0) > 0:
             vendor_approval_rate = round((overview.get('approved_vendors', 0) / overview.get('total_vendors', 0)) * 100, 1)
-            metrics_text += f"⭐ Коэффициент одобрения поставщиков: `{vendor_approval_rate}%`\n"
+            metrics_text += f"⭐ Коэффициент одобрения поставщиков: {vendor_approval_rate}%\n"
         
         if overview.get('paid_orders', 0) > 0:
             completion_rate = round((overview.get('completed_orders', 0) / overview.get('paid_orders', 0)) * 100, 1)
-            metrics_text += f"🏁 Коэффициент завершения заказов: `{completion_rate}%`\n"
+            metrics_text += f"🏁 Коэффициент завершения заказов: {completion_rate}%\n"
         
         avg_order_value = overview.get('gmv_total', 0) / overview.get('paid_orders', 1) if overview.get('paid_orders', 0) > 0 else 0
-        metrics_text += f"📊 Средний чек: `{round(avg_order_value, 2)} тг`\n\n"
+        metrics_text += f"📊 Средний чек: {round(avg_order_value, 2)} тг\n\n"
         
         # Send the formatted metrics message
-        await message.answer(metrics_text, parse_mode="Markdown")
+        await message.answer(metrics_text)
         
         # Send a simple usage note instead of automatic detailed reports
         usage_note = (
-            "💡 *Для детальных отчетов используйте:*\n"
-            "`/metrics_detailed [дни]` - детальный отчет\n"
-            "`/analytics` - расширенная аналитика"
+            "💡 Для детальных отчетов используйте:\n"
+            "/metrics_detailed [дни] - детальный отчет\n"
+            "/analytics - расширенная аналитика"
         )
-        await message.answer(usage_note, parse_mode="Markdown")
+        await message.answer(usage_note)
         
     except Exception as e:
         logging.error(f"Error generating metrics: {e}")
@@ -1833,15 +1833,15 @@ async def send_detailed_metrics_reports(message: Message):
         
         # Format weekly report
         weekly_text = format_metrics_report("📅 ОТЧЕТ ЗА 7 ДНЕЙ", weekly_report)
-        await message.answer(weekly_text, parse_mode="Markdown")
+        await message.answer(weekly_text)
         
         # Format monthly report
         monthly_text = format_metrics_report("📆 ОТЧЕТ ЗА 30 ДНЕЙ", monthly_report)
-        await message.answer(monthly_text, parse_mode="Markdown")
+        await message.answer(monthly_text)
         
         # Add trend analysis
         trend_text = await generate_trend_analysis(weekly_report, monthly_report)
-        await message.answer(trend_text, parse_mode="Markdown")
+        await message.answer(trend_text)
         
     except Exception as e:
         logging.error(f"Error generating detailed reports: {e}")
@@ -1850,18 +1850,18 @@ async def send_detailed_metrics_reports(message: Message):
 
 def format_metrics_report(title: str, report: Dict) -> str:
     """Format a metrics report into readable text"""
-    report_text = f"*{title}*\n" + "━" * len(title) + "\n\n"
+    report_text = f"{title}\n" + "━" * len(title) + "\n\n"
     
     # Time period
     time_period = report.get("time_period", {})
     start_date = time_period.get("start_date", "").split("T")[0]
     end_date = time_period.get("end_date", "").split("T")[0]
-    report_text += f"📍 Период: `{start_date}` — `{end_date}`\n\n"
+    report_text += f"📍 Период: {start_date} — {end_date}\n\n"
     
     # Event counts
     counts = report.get("summary", {}).get("counts", {})
     if counts:
-        report_text += "*📊 СОБЫТИЯ:*\n"
+        report_text += "📊 СОБЫТИЯ:\n"
         event_translations = {
             "user_registration": "👤 Регистрации пользователей",
             "vendor_registration": "🏪 Регистрации поставщиков", 
@@ -1877,42 +1877,42 @@ def format_metrics_report(title: str, report: Dict) -> str:
         
         for event_type, count in counts.items():
             display_name = event_translations.get(event_type, event_type.replace("_", " ").title())
-            report_text += f"{display_name}: `{count}`\n"
+            report_text += f"{display_name}: {count}\n"
         
         report_text += "\n"
     
     # Conversion rates
     conversion = report.get("summary", {}).get("conversion", {})
     if isinstance(conversion, dict):
-        report_text += "*🎯 КОНВЕРСИИ:*\n"
-        report_text += f"🔍 Просмотр → Детали: `{conversion.get('browse_to_view', 0)}%`\n"
-        report_text += f"👆 Детали → Заказ: `{conversion.get('view_to_order', 0)}%`\n"
-        report_text += f"💳 Заказ → Оплата: `{conversion.get('order_to_payment', 0)}%`\n"
-        report_text += f"🏁 Оплата → Завершение: `{conversion.get('payment_to_completion', 0)}%`\n"
-        report_text += f"🎉 Общая конверсия: `{conversion.get('overall_browse_to_purchase', 0)}%`\n\n"
+        report_text += "🎯 КОНВЕРСИИ:\n"
+        report_text += f"🔍 Просмотр → Детали: {conversion.get('browse_to_view', 0)}%\n"
+        report_text += f"👆 Детали → Заказ: {conversion.get('view_to_order', 0)}%\n"
+        report_text += f"💳 Заказ → Оплата: {conversion.get('order_to_payment', 0)}%\n"
+        report_text += f"🏁 Оплата → Завершение: {conversion.get('payment_to_completion', 0)}%\n"
+        report_text += f"🎉 Общая конверсия: {conversion.get('overall_browse_to_purchase', 0)}%\n\n"
     
     # Acquisition metrics
     acquisition = report.get("summary", {}).get("acquisition", {})
     if isinstance(acquisition, dict):
-        report_text += "*📈 ПРИВЛЕЧЕНИЕ:*\n"
-        report_text += f"👥 Новых пользователей: `{acquisition.get('users_registered', 0)}`\n"
-        report_text += f"🏪 Новых поставщиков: `{acquisition.get('vendors_registered', 0)}`\n"
-        report_text += f"✅ Одобренных поставщиков: `{acquisition.get('vendors_approved', 0)}`\n\n"
+        report_text += "📈 ПРИВЛЕЧЕНИЕ:\n"
+        report_text += f"👥 Новых пользователей: {acquisition.get('users_registered', 0)}\n"
+        report_text += f"🏪 Новых поставщиков: {acquisition.get('vendors_registered', 0)}\n"
+        report_text += f"✅ Одобренных поставщиков: {acquisition.get('vendors_approved', 0)}\n\n"
     
     # Engagement metrics
     engagement = report.get("summary", {}).get("engagement", {})
     if isinstance(engagement, dict):
-        report_text += "*🎪 ВОВЛЕЧЕННОСТЬ:*\n"
-        report_text += f"🍽 Блюд на поставщика: `{engagement.get('meals_per_vendor', 0)}`\n"
-        report_text += f"💰 Средний чек: `{engagement.get('avg_order_value', 0)} тг`\n"
-        report_text += f"💎 Объем продаж: `{engagement.get('total_sales_value', 0)} тг`\n\n"
+        report_text += "🎪 ВОВЛЕЧЕННОСТЬ:\n"
+        report_text += f"🍽 Блюд на поставщика: {engagement.get('meals_per_vendor', 0)}\n"
+        report_text += f"💰 Средний чек: {engagement.get('avg_order_value', 0)} тг\n"
+        report_text += f"💎 Объем продаж: {engagement.get('total_sales_value', 0)} тг\n\n"
     
     return report_text
 
 
 async def generate_trend_analysis(weekly_report: Dict, monthly_report: Dict) -> str:
     """Generate trend analysis comparing weekly vs monthly data"""
-    trend_text = "*📈 АНАЛИЗ ТРЕНДОВ*\n" + "━" * 15 + "\n\n"
+    trend_text = "📈 АНАЛИЗ ТРЕНДОВ\n" + "━" * 15 + "\n\n"
     
     try:
         # Get weekly and monthly counts
@@ -1920,7 +1920,7 @@ async def generate_trend_analysis(weekly_report: Dict, monthly_report: Dict) -> 
         monthly_counts = monthly_report.get("summary", {}).get("counts", {})
         
         # Calculate weekly averages from monthly data
-        trend_text += "*📊 СРЕДНИЕ ПОКАЗАТЕЛИ В НЕДЕЛЮ:*\n"
+        trend_text += "📊 СРЕДНИЕ ПОКАЗАТЕЛИ В НЕДЕЛЮ:\n"
         
         key_metrics = [
             ("user_registration", "👤 Регистрации пользователей"),
@@ -1936,16 +1936,16 @@ async def generate_trend_analysis(weekly_report: Dict, monthly_report: Dict) -> 
             if monthly_avg_per_week > 0:
                 trend = "📈" if weekly_actual > monthly_avg_per_week else "📉" if weekly_actual < monthly_avg_per_week else "➡️"
                 percentage_change = ((weekly_actual - monthly_avg_per_week) / monthly_avg_per_week * 100) if monthly_avg_per_week > 0 else 0
-                trend_text += f"{metric_name}: `{weekly_actual}` (средн: `{round(monthly_avg_per_week, 1)}`) {trend} `{round(percentage_change, 1)}%`\n"
+                trend_text += f"{metric_name}: {weekly_actual} (средн: {round(monthly_avg_per_week, 1)}) {trend} {round(percentage_change, 1)}%\n"
             else:
-                trend_text += f"{metric_name}: `{weekly_actual}` (нет данных за месяц)\n"
+                trend_text += f"{metric_name}: {weekly_actual} (нет данных за месяц)\n"
         
         # Conversion trend analysis
         weekly_conv = weekly_report.get("summary", {}).get("conversion", {})
         monthly_conv = monthly_report.get("summary", {}).get("conversion", {})
         
         if isinstance(weekly_conv, dict) and isinstance(monthly_conv, dict):
-            trend_text += "\n*🎯 ТРЕНДЫ КОНВЕРСИИ:*\n"
+            trend_text += "\n🎯 ТРЕНДЫ КОНВЕРСИИ:\n"
             
             conv_metrics = [
                 ("overall_browse_to_purchase", "🎉 Общая конверсия"),
@@ -1961,10 +1961,10 @@ async def generate_trend_analysis(weekly_report: Dict, monthly_report: Dict) -> 
                     trend = "📈" if weekly_rate > monthly_rate else "📉" if weekly_rate < monthly_rate else "➡️"
                     diff = round(weekly_rate - monthly_rate, 1)
                     sign = "+" if diff > 0 else ""
-                    trend_text += f"{conv_name}: `{weekly_rate}%` vs `{monthly_rate}%` {trend} `{sign}{diff}%`\n"
+                    trend_text += f"{conv_name}: {weekly_rate}% vs {monthly_rate}% {trend} {sign}{diff}%\n"
         
         # Add recommendations
-        trend_text += "\n*💡 РЕКОМЕНДАЦИИ:*\n"
+        trend_text += "\n💡 РЕКОМЕНДАЦИИ:\n"
         
         overall_conv_weekly = weekly_conv.get("overall_browse_to_purchase", 0) if isinstance(weekly_conv, dict) else 0
         overall_conv_monthly = monthly_conv.get("overall_browse_to_purchase", 0) if isinstance(monthly_conv, dict) else 0
@@ -2226,7 +2226,7 @@ async def cmd_metrics_detailed(message: Message):
                 elif days > 365:
                     days = 365  # Maximum 1 year
             except ValueError:
-                await message.answer("❌ Неверный формат. Используйте: `/metrics_detailed [дни]`\nПример: `/metrics_detailed 14`", parse_mode="Markdown")
+                await message.answer("❌ Неверный формат. Используйте: /metrics_detailed [дни]\nПример: /metrics_detailed 14")
                 return
         
         # Generate report for specified period
@@ -2250,24 +2250,22 @@ async def cmd_metrics_detailed(message: Message):
         # Add most viewed meals
         most_viewed = await get_most_viewed_meals(limit=5)
         if most_viewed:
-            detailed_text += "\n*🔥 ТОП ПРОСМАТРИВАЕМЫХ БЛЮД:*\n"
+            detailed_text += "\n🔥 ТОП ПРОСМАТРИВАЕМЫХ БЛЮД:\n"
             for i, (meal, view_count) in enumerate(most_viewed, 1):
-                # Escape meal name to prevent Markdown parsing errors
-                escaped_meal_name = escape_markdown(meal.name)
-                detailed_text += f"{i}\\. {escaped_meal_name} (`{view_count}` просмотров)\n"
+                detailed_text += f"{i}. {meal.name} ({view_count} просмотров)\n"
         
-        await message.answer(detailed_text, parse_mode="Markdown")
+        await message.answer(detailed_text)
         
         # Usage instructions
         usage_text = (
-            "💡 *ИСПОЛЬЗОВАНИЕ КОМАНДЫ:*\n"
-            "`/metrics_detailed` - отчет за 7 дней\n"
-            "`/metrics_detailed 14` - отчет за 14 дней\n"
-            "`/metrics_detailed 30` - отчет за 30 дней\n"
-            "`/metrics_detailed 90` - отчет за 90 дней\n\n"
-            "🔄 Для обновления данных используйте `/metrics`"
+            "💡 ИСПОЛЬЗОВАНИЕ КОМАНДЫ:\n"
+            "/metrics_detailed - отчет за 7 дней\n"
+            "/metrics_detailed 14 - отчет за 14 дней\n"
+            "/metrics_detailed 30 - отчет за 30 дней\n"
+            "/metrics_detailed 90 - отчет за 90 дней\n\n"
+            "🔄 Для обновления данных используйте /metrics"
         )
-        await message.answer(usage_text, parse_mode="Markdown")
+        await message.answer(usage_text)
         
     except Exception as e:
         logging.error(f"Error generating detailed metrics: {e}")
@@ -2291,53 +2289,53 @@ async def cmd_analytics(message: Message):
         # Get peak hours analysis
         peak_hours = await get_peak_hours_analysis()
         if "error" not in peak_hours:
-            peak_text = "*⏰ АНАЛИЗ ПИКОВЫХ ЧАСОВ*\n"
+            peak_text = "⏰ АНАЛИЗ ПИКОВЫХ ЧАСОВ\n"
             peak_text += "━" * 25 + "\n\n"
             
             if peak_hours["total_activity"] > 0:
-                peak_text += "*🔥 ТОП-3 САМЫХ АКТИВНЫХ ЧАСА:*\n"
+                peak_text += "🔥 ТОП-3 САМЫХ АКТИВНЫХ ЧАСА:\n"
                 for i, (hour, activity) in enumerate(peak_hours["peak_hours"], 1):
-                    peak_text += f"{i}. {hour:02d}:00 - `{activity}` действий\n"
+                    peak_text += f"{i}. {hour:02d}:00 - {activity} действий\n"
                 
-                peak_text += f"\n📊 Общая активность: `{peak_hours['total_activity']}` действий\n\n"
+                peak_text += f"\n📊 Общая активность: {peak_hours['total_activity']} действий\n\n"
                 
                 # Show hourly breakdown for busy hours only
-                peak_text += "*📈 АКТИВНОСТЬ ПО ЧАСАМ (топ-10):*\n"
+                peak_text += "📈 АКТИВНОСТЬ ПО ЧАСАМ (топ-10):\n"
                 sorted_hours = sorted(peak_hours["hourly_breakdown"].items(), key=lambda x: x[1], reverse=True)
                 for hour, activity in sorted_hours[:10]:
                     if activity > 0:
-                        peak_text += f"• {hour:02d}:00 - `{activity}`\n"
+                        peak_text += f"• {hour:02d}:00 - {activity}\n"
             else:
                 peak_text += "Нет данных об активности за последние 30 дней.\n"
             
-            await message.answer(peak_text, parse_mode="Markdown")
+            await message.answer(peak_text)
         
         # Get user activity patterns
         user_patterns = await get_user_activity_patterns()
         if "error" not in user_patterns:
-            patterns_text = "*👥 АНАЛИЗ АКТИВНОСТИ ПОЛЬЗОВАТЕЛЕЙ*\n"
+            patterns_text = "👥 АНАЛИЗ АКТИВНОСТИ ПОЛЬЗОВАТЕЛЕЙ\n"
             patterns_text += "━" * 35 + "\n\n"
             
-            patterns_text += f"👤 Активных пользователей: `{user_patterns['total_users_active']}`\n"
-            patterns_text += f"📊 Среднее действий/пользователь: `{user_patterns['avg_actions_per_user']}`\n"
-            patterns_text += f"⭐ Активных за неделю: `{user_patterns['active_last_week']}`\n"
-            patterns_text += f"📈 Коэффициент вовлеченности: `{user_patterns['engagement_rate']}%`\n"
-            patterns_text += f"🔥 Суперпользователей: `{user_patterns['power_users_count']}`\n\n"
+            patterns_text += f"👤 Активных пользователей: {user_patterns['total_users_active']}\n"
+            patterns_text += f"📊 Среднее действий/пользователь: {user_patterns['avg_actions_per_user']}\n"
+            patterns_text += f"⭐ Активных за неделю: {user_patterns['active_last_week']}\n"
+            patterns_text += f"📈 Коэффициент вовлеченности: {user_patterns['engagement_rate']}%\n"
+            patterns_text += f"🔥 Суперпользователей: {user_patterns['power_users_count']}\n\n"
             
             # Show top power users (anonymized)
             if user_patterns["top_power_users"]:
-                patterns_text += "*🏆 ТОП АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:*\n"
+                patterns_text += "🏆 ТОП АКТИВНЫХ ПОЛЬЗОВАТЕЛЕЙ:\n"
                 for i, (user_id, actions) in enumerate(user_patterns["top_power_users"], 1):
                     # Anonymize user ID for privacy
                     anonymous_id = f"user_{str(user_id)[-4:]}"
-                    patterns_text += f"{i}. {anonymous_id}: `{actions}` действий\n"
+                    patterns_text += f"{i}. {anonymous_id}: {actions} действий\n"
             
-            await message.answer(patterns_text, parse_mode="Markdown")
+            await message.answer(patterns_text)
         
         # Get conversion funnel analysis
         funnel = await get_conversion_funnel_detailed()
         if "error" not in funnel:
-            funnel_text = "*🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ВОРОНКИ*\n"
+            funnel_text = "🎯 ДЕТАЛЬНЫЙ АНАЛИЗ ВОРОНКИ\n"
             funnel_text += "━" * 30 + "\n\n"
             
             counts = funnel["funnel_counts"]
@@ -2345,72 +2343,70 @@ async def cmd_analytics(message: Message):
             dropoffs = funnel["dropoffs"]
             
             # Show funnel steps with dropoffs
-            funnel_text += "*📊 ЭТАПЫ ВОРОНКИ:*\n"
-            funnel_text += f"1️⃣ Просмотры каталога: `{counts['browse']}`\n"
+            funnel_text += "📊 ЭТАПЫ ВОРОНКИ:\n"
+            funnel_text += f"1️⃣ Просмотры каталога: {counts['browse']}\n"
             if "browse_to_view" in conversions:
-                funnel_text += f"   ↓ Конверсия: `{conversions['browse_to_view']}%`\n"
-                funnel_text += f"   ❌ Отсев: `{dropoffs['browse_to_view']['count']}` ({dropoffs['browse_to_view']['rate']}%)\n"
+                funnel_text += f"   ↓ Конверсия: {conversions['browse_to_view']}%\n"
+                funnel_text += f"   ❌ Отсев: {dropoffs['browse_to_view']['count']} ({dropoffs['browse_to_view']['rate']}%)\n"
             
-            funnel_text += f"2️⃣ Просмотры деталей: `{counts['view']}`\n"
+            funnel_text += f"2️⃣ Просмотры деталей: {counts['view']}\n"
             if "view_to_order_created" in conversions:
-                funnel_text += f"   ↓ Конверсия: `{conversions['view_to_order_created']}%`\n"
-                funnel_text += f"   ❌ Отсев: `{dropoffs['view_to_order_created']['count']}` ({dropoffs['view_to_order_created']['rate']}%)\n"
+                funnel_text += f"   ↓ Конверсия: {conversions['view_to_order_created']}%\n"
+                funnel_text += f"   ❌ Отсев: {dropoffs['view_to_order_created']['count']} ({dropoffs['view_to_order_created']['rate']}%)\n"
             
-            funnel_text += f"3️⃣ Создание заказов: `{counts['order_created']}`\n"
+            funnel_text += f"3️⃣ Создание заказов: {counts['order_created']}\n"
             if "order_created_to_order_paid" in conversions:
-                funnel_text += f"   ↓ Конверсия: `{conversions['order_created_to_order_paid']}%`\n"
-                funnel_text += f"   ❌ Отсев: `{dropoffs['order_created_to_order_paid']['count']}` ({dropoffs['order_created_to_order_paid']['rate']}%)\n"
+                funnel_text += f"   ↓ Конверсия: {conversions['order_created_to_order_paid']}%\n"
+                funnel_text += f"   ❌ Отсев: {dropoffs['order_created_to_order_paid']['count']} ({dropoffs['order_created_to_order_paid']['rate']}%)\n"
             
-            funnel_text += f"4️⃣ Оплаченные заказы: `{counts['order_paid']}`\n"
+            funnel_text += f"4️⃣ Оплаченные заказы: {counts['order_paid']}\n"
             if "order_paid_to_order_completed" in conversions:
-                funnel_text += f"   ↓ Конверсия: `{conversions['order_paid_to_order_completed']}%`\n"
-                funnel_text += f"   ❌ Отсев: `{dropoffs['order_paid_to_order_completed']['count']}` ({dropoffs['order_paid_to_order_completed']['rate']}%)\n"
+                funnel_text += f"   ↓ Конверсия: {conversions['order_paid_to_order_completed']}%\n"
+                funnel_text += f"   ❌ Отсев: {dropoffs['order_paid_to_order_completed']['count']} ({dropoffs['order_paid_to_order_completed']['rate']}%)\n"
             
-            funnel_text += f"5️⃣ Завершенные заказы: `{counts['order_completed']}`\n\n"
+            funnel_text += f"5️⃣ Завершенные заказы: {counts['order_completed']}\n\n"
             
             # Calculate overall conversion
             if counts['browse'] > 0:
                 overall_conversion = round((counts['order_paid'] / counts['browse']) * 100, 2)
-                funnel_text += f"🎉 *Общая конверсия*: `{overall_conversion}%`\n"
+                funnel_text += f"🎉 Общая конверсия: {overall_conversion}%\n"
             
-            await message.answer(funnel_text, parse_mode="Markdown")
+            await message.answer(funnel_text)
         
         # Get vendor performance metrics
         vendor_performance = await get_vendor_performance_metrics()
         if "error" not in vendor_performance:
-            vendor_text = "*🏪 ПРОИЗВОДИТЕЛЬНОСТЬ ПОСТАВЩИКОВ*\n"
+            vendor_text = "🏪 ПРОИЗВОДИТЕЛЬНОСТЬ ПОСТАВЩИКОВ\n"
             vendor_text += "━" * 38 + "\n\n"
             
             summary = vendor_performance["summary"]
-            vendor_text += f"🏪 Всего поставщиков: `{summary['total_vendors']}`\n"
-            vendor_text += f"💰 Общая выручка: `{summary['total_revenue']} тг`\n"
-            vendor_text += f"📊 Средняя выручка/поставщик: `{summary['avg_revenue_per_vendor']} тг`\n\n"
+            vendor_text += f"🏪 Всего поставщиков: {summary['total_vendors']}\n"
+            vendor_text += f"💰 Общая выручка: {summary['total_revenue']} тг\n"
+            vendor_text += f"📊 Средняя выручка/поставщик: {summary['avg_revenue_per_vendor']} тг\n\n"
             
             # Show top performing vendors
             if vendor_performance["vendor_performance"]:
-                vendor_text += "*🏆 ТОП-5 ПОСТАВЩИКОВ ПО ВЫРУЧКЕ:*\n"
+                vendor_text += "🏆 ТОП-5 ПОСТАВЩИКОВ ПО ВЫРУЧКЕ:\n"
                 for i, vendor in enumerate(vendor_performance["vendor_performance"][:5], 1):
-                    # Escape vendor name to prevent Markdown parsing errors
-                    escaped_vendor_name = escape_markdown(vendor['vendor_name'])
                     vendor_text += (
-                        f"{i}\\. {escaped_vendor_name}\n"
-                        f"   💰 Выручка: `{vendor['total_revenue']} тг`\n"
-                        f"   🍽 Блюд: `{vendor['total_meals']}`\n"
-                        f"   📦 Заказов: `{vendor['paid_orders']}`\n"
-                        f"   📈 Заказов/блюдо: `{vendor['orders_per_meal']}`\n\n"
+                        f"{i}. {vendor['vendor_name']}\n"
+                        f"   💰 Выручка: {vendor['total_revenue']} тг\n"
+                        f"   🍽 Блюд: {vendor['total_meals']}\n"
+                        f"   📦 Заказов: {vendor['paid_orders']}\n"
+                        f"   📈 Заказов/блюдо: {vendor['orders_per_meal']}\n\n"
                     )
             
-            await message.answer(vendor_text, parse_mode="Markdown")
+            await message.answer(vendor_text)
         
         # Usage instructions
         usage_text = (
-            "💡 *ДОСТУПНЫЕ КОМАНДЫ АНАЛИТИКИ:*\n\n"
-            "`/metrics` - основная панель метрик\n"
-            "`/metrics_detailed [дни]` - детальный отчет\n"
-            "`/analytics` - расширенная аналитика\n\n"
+            "💡 ДОСТУПНЫЕ КОМАНДЫ АНАЛИТИКИ:\n\n"
+            "/metrics - основная панель метрик\n"
+            "/metrics_detailed [дни] - детальный отчет\n"
+            "/analytics - расширенная аналитика\n\n"
             "🔄 Данные обновляются в реальном времени"
         )
-        await message.answer(usage_text, parse_mode="Markdown")
+        await message.answer(usage_text)
         
     except Exception as e:
         logging.error(f"Error generating analytics: {e}")
