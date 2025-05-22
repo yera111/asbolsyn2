@@ -283,4 +283,259 @@ async def get_metrics_dashboard_data() -> Dict:
         return dashboard
     except Exception as e:
         logger.error(f"Error generating metrics dashboard: {str(e)}")
-        return {"error": f"Could not generate metrics dashboard: {str(e)}"} 
+        return {"error": f"Could not generate metrics dashboard: {str(e)}"}
+
+
+async def get_peak_hours_analysis() -> Dict:
+    """
+    Analyze peak activity hours based on metric timestamps.
+    
+    Returns:
+        Dictionary with hourly activity breakdown
+    """
+    try:
+        # Get all metrics from the last 30 days
+        thirty_days_ago = datetime.now(ALMATY_TIMEZONE) - timedelta(days=30)
+        metrics = await Metric.filter(timestamp__gte=thirty_days_ago).all()
+        
+        # Group by hour of day
+        hourly_activity = {hour: 0 for hour in range(24)}
+        
+        for metric in metrics:
+            # Convert to Almaty timezone if needed
+            metric_time = metric.timestamp
+            if metric_time.tzinfo is None:
+                metric_time = metric_time.replace(tzinfo=ALMATY_TIMEZONE)
+            else:
+                metric_time = metric_time.astimezone(ALMATY_TIMEZONE)
+            
+            hour = metric_time.hour
+            hourly_activity[hour] += 1
+        
+        # Find peak hours
+        sorted_hours = sorted(hourly_activity.items(), key=lambda x: x[1], reverse=True)
+        peak_hours = sorted_hours[:3]  # Top 3 hours
+        
+        return {
+            "hourly_breakdown": hourly_activity,
+            "peak_hours": peak_hours,
+            "total_activity": sum(hourly_activity.values())
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing peak hours: {str(e)}")
+        return {"error": str(e)}
+
+
+async def get_user_activity_patterns() -> Dict:
+    """
+    Analyze user activity patterns and engagement metrics.
+    
+    Returns:
+        Dictionary with user activity analysis
+    """
+    try:
+        # Get activity for the last 30 days
+        thirty_days_ago = datetime.now(ALMATY_TIMEZONE) - timedelta(days=30)
+        
+        # Get all user activities
+        user_metrics = {}
+        metrics = await Metric.filter(
+            timestamp__gte=thirty_days_ago,
+            user_id__isnull=False
+        ).all()
+        
+        for metric in metrics:
+            user_id = metric.user_id
+            if user_id not in user_metrics:
+                user_metrics[user_id] = {
+                    "total_actions": 0,
+                    "action_types": {},
+                    "last_activity": metric.timestamp
+                }
+            
+            user_metrics[user_id]["total_actions"] += 1
+            
+            # Track action types
+            action_type = metric.metric_type.value
+            if action_type not in user_metrics[user_id]["action_types"]:
+                user_metrics[user_id]["action_types"][action_type] = 0
+            user_metrics[user_id]["action_types"][action_type] += 1
+            
+            # Update last activity
+            if metric.timestamp > user_metrics[user_id]["last_activity"]:
+                user_metrics[user_id]["last_activity"] = metric.timestamp
+        
+        # Calculate engagement statistics
+        if user_metrics:
+            total_users = len(user_metrics)
+            actions_per_user = [data["total_actions"] for data in user_metrics.values()]
+            avg_actions_per_user = sum(actions_per_user) / total_users
+            
+            # Find power users (top 10% by activity)
+            sorted_users = sorted(user_metrics.items(), key=lambda x: x[1]["total_actions"], reverse=True)
+            power_user_count = max(1, total_users // 10)
+            power_users = sorted_users[:power_user_count]
+            
+            # Calculate active users (users with activity in last 7 days)
+            week_ago = datetime.now(ALMATY_TIMEZONE) - timedelta(days=7)
+            active_users = sum(1 for data in user_metrics.values() 
+                             if data["last_activity"] >= week_ago)
+            
+            return {
+                "total_users_active": total_users,
+                "avg_actions_per_user": round(avg_actions_per_user, 2),
+                "power_users_count": len(power_users),
+                "active_last_week": active_users,
+                "engagement_rate": round((active_users / total_users * 100), 2) if total_users > 0 else 0,
+                "top_power_users": [(user_id, data["total_actions"]) for user_id, data in power_users[:5]]
+            }
+        else:
+            return {
+                "total_users_active": 0,
+                "avg_actions_per_user": 0,
+                "power_users_count": 0,
+                "active_last_week": 0,
+                "engagement_rate": 0,
+                "top_power_users": []
+            }
+            
+    except Exception as e:
+        logger.error(f"Error analyzing user activity patterns: {str(e)}")
+        return {"error": str(e)}
+
+
+async def get_conversion_funnel_detailed() -> Dict:
+    """
+    Get detailed conversion funnel analysis with dropoff points.
+    
+    Returns:
+        Dictionary with detailed funnel analysis
+    """
+    try:
+        # Get metrics for the last 30 days
+        thirty_days_ago = datetime.now(ALMATY_TIMEZONE) - timedelta(days=30)
+        
+        # Count each step in the funnel
+        funnel_steps = {
+            "browse": await Metric.filter(
+                timestamp__gte=thirty_days_ago,
+                metric_type=MetricType.MEAL_BROWSE
+            ).count(),
+            "view": await Metric.filter(
+                timestamp__gte=thirty_days_ago,
+                metric_type=MetricType.MEAL_VIEW
+            ).count(),
+            "order_created": await Metric.filter(
+                timestamp__gte=thirty_days_ago,
+                metric_type=MetricType.ORDER_CREATED
+            ).count(),
+            "order_paid": await Metric.filter(
+                timestamp__gte=thirty_days_ago,
+                metric_type=MetricType.ORDER_PAID
+            ).count(),
+            "order_completed": await Metric.filter(
+                timestamp__gte=thirty_days_ago,
+                metric_type=MetricType.ORDER_COMPLETED
+            ).count()
+        }
+        
+        # Calculate conversion rates and dropoff
+        conversions = {}
+        dropoffs = {}
+        
+        steps = list(funnel_steps.keys())
+        for i in range(len(steps) - 1):
+            current_step = steps[i]
+            next_step = steps[i + 1]
+            
+            current_count = funnel_steps[current_step]
+            next_count = funnel_steps[next_step]
+            
+            if current_count > 0:
+                conversion_rate = round((next_count / current_count) * 100, 2)
+                dropoff_rate = round(100 - conversion_rate, 2)
+                dropoff_count = current_count - next_count
+            else:
+                conversion_rate = 0
+                dropoff_rate = 0
+                dropoff_count = 0
+            
+            conversions[f"{current_step}_to_{next_step}"] = conversion_rate
+            dropoffs[f"{current_step}_to_{next_step}"] = {
+                "rate": dropoff_rate,
+                "count": dropoff_count
+            }
+        
+        return {
+            "funnel_counts": funnel_steps,
+            "conversions": conversions,
+            "dropoffs": dropoffs,
+            "total_entered_funnel": funnel_steps["browse"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing conversion funnel: {str(e)}")
+        return {"error": str(e)}
+
+
+async def get_vendor_performance_metrics() -> Dict:
+    """
+    Analyze vendor performance metrics.
+    
+    Returns:
+        Dictionary with vendor performance data
+    """
+    try:
+        # Get all approved vendors with their meals and orders
+        vendors = await Vendor.filter(status=VendorStatus.APPROVED).prefetch_related('meals', 'meals__orders').all()
+        
+        vendor_stats = []
+        
+        for vendor in vendors:
+            # Calculate metrics for each vendor
+            total_meals = len([meal for meal in vendor.meals if meal.is_active])
+            total_orders = sum(len(meal.orders) for meal in vendor.meals)
+            paid_orders = sum(len([order for order in meal.orders if order.status in [OrderStatus.PAID, OrderStatus.COMPLETED]]) for meal in vendor.meals)
+            
+            # Calculate revenue
+            total_revenue = 0
+            for meal in vendor.meals:
+                for order in meal.orders:
+                    if order.status in [OrderStatus.PAID, OrderStatus.COMPLETED]:
+                        total_revenue += float(meal.price) * order.quantity
+            
+            # Calculate average meal price
+            active_meals = [meal for meal in vendor.meals if meal.is_active]
+            avg_meal_price = sum(float(meal.price) for meal in active_meals) / len(active_meals) if active_meals else 0
+            
+            vendor_stats.append({
+                "vendor_id": vendor.telegram_id,
+                "vendor_name": vendor.name,
+                "total_meals": total_meals,
+                "total_orders": total_orders,
+                "paid_orders": paid_orders,
+                "total_revenue": round(total_revenue, 2),
+                "avg_meal_price": round(avg_meal_price, 2),
+                "orders_per_meal": round(paid_orders / total_meals, 2) if total_meals > 0 else 0
+            })
+        
+        # Sort by revenue
+        vendor_stats.sort(key=lambda x: x["total_revenue"], reverse=True)
+        
+        # Calculate aggregate statistics
+        total_vendors = len(vendor_stats)
+        total_revenue_all = sum(v["total_revenue"] for v in vendor_stats)
+        avg_revenue_per_vendor = total_revenue_all / total_vendors if total_vendors > 0 else 0
+        
+        return {
+            "vendor_performance": vendor_stats[:10],  # Top 10 vendors
+            "summary": {
+                "total_vendors": total_vendors,
+                "total_revenue": round(total_revenue_all, 2),
+                "avg_revenue_per_vendor": round(avg_revenue_per_vendor, 2)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing vendor performance: {str(e)}")
+        return {"error": str(e)} 
