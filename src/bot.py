@@ -93,7 +93,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/cancel - Отменить текущий процесс\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -257,7 +257,7 @@ async def cmd_register_vendor(message: Message, state: FSMContext):
     
     # Start registration process
     await state.set_state(VendorRegistration.waiting_for_name)
-    await message.answer(TEXT["vendor_register_start"])
+    await message.answer(TEXT["vendor_register_start"] + "\n\n💡 Для отмены регистрации в любой момент отправьте /cancel или напишите 'отмена'.")
 
 
 @dp.message(VendorRegistration.waiting_for_name)
@@ -428,7 +428,7 @@ async def cmd_add_meal(message: Message, state: FSMContext):
     
     # Start meal creation process
     await state.set_state(MealCreation.waiting_for_name)
-    await message.answer(TEXT["meal_add_start"])
+    await message.answer(TEXT["meal_add_start"] + "\n\n💡 Для отмены создания блюда в любой момент отправьте /cancel или напишите 'отмена'.")
 
 
 @dp.message(MealCreation.waiting_for_name)
@@ -1767,8 +1767,8 @@ async def cmd_metrics(message: Message):
         overview = dashboard.get("overview", {})
         
         metrics_text = (
-            "📊 ПАНЕЛЬ МЕТРИК AS BOLSYN\n"
-            "━" * 30 + "\n\n"
+            "📊 ПАНЕЛЬ МЕТРИК\n"
+            "━" * 25 + "\n\n"
             "📈 ОБЩАЯ СТАТИСТИКА\n"
             f"👥 Пользователей: {overview.get('total_users', 0)}\n"
             f"🏪 Поставщиков: {overview.get('approved_vendors', 0)}/{overview.get('total_vendors', 0)} (одобрено/всего)\n"
@@ -2045,7 +2045,26 @@ async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery)
         # Extract order ID from payload
         # Expected format: "order_123" where 123 is the order ID
         payload = pre_checkout_query.invoice_payload
-        order_id = int(payload.split('_')[1])
+        
+        if not payload or '_' not in payload:
+            logging.error(f"Invalid payload format: {payload}")
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout_query.id,
+                ok=False,
+                error_message="Неверный формат заказа. Пожалуйста, попробуйте еще раз."
+            )
+            return
+            
+        try:
+            order_id = int(payload.split('_')[1])
+        except (ValueError, IndexError):
+            logging.error(f"Could not extract order ID from payload: {payload}")
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout_query.id,
+                ok=False,
+                error_message="Неверный формат заказа. Пожалуйста, попробуйте еще раз."
+            )
+            return
         
         # Verify the order exists and is still pending
         order = await Order.filter(id=order_id, status=OrderStatus.PENDING).prefetch_related('meal').first()
@@ -2061,11 +2080,23 @@ async def process_pre_checkout_query(pre_checkout_query: types.PreCheckoutQuery)
             
         # Verify meal is still available and has enough quantity
         meal = order.meal
-        if not meal.is_active or meal.quantity < order.quantity:
+        if not meal or not meal.is_active or meal.quantity < order.quantity:
             await bot.answer_pre_checkout_query(
                 pre_checkout_query_id=pre_checkout_query.id,
                 ok=False,
                 error_message="Блюдо больше не доступно или количество порций уменьшилось."
+            )
+            return
+            
+        # Check if meal pickup time hasn't expired
+        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
+        current_almaty = get_current_almaty_time()
+        
+        if pickup_end_time <= current_almaty:
+            await bot.answer_pre_checkout_query(
+                pre_checkout_query_id=pre_checkout_query.id,
+                ok=False,
+                error_message="Время самовывоза для этого блюда уже истекло."
             )
             return
             
@@ -2097,9 +2128,25 @@ async def process_successful_payment(message: Message):
         # Get payment info
         payment = message.successful_payment
         
+        if not payment or not payment.invoice_payload:
+            logging.error("No payment info or payload in successful payment message")
+            await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+            return
+        
         # Extract order ID from payload
         payload = payment.invoice_payload
-        order_id = int(payload.split('_')[1])
+        
+        if not payload or '_' not in payload:
+            logging.error(f"Invalid payload format in successful payment: {payload}")
+            await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+            return
+            
+        try:
+            order_id = int(payload.split('_')[1])
+        except (ValueError, IndexError):
+            logging.error(f"Could not extract order ID from successful payment payload: {payload}")
+            await message.answer("Произошла ошибка при обработке платежа. Обратитесь в поддержку.")
+            return
         
         # Get the order with all related models
         order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer', 'meal__vendor').first()
@@ -2107,6 +2154,12 @@ async def process_successful_payment(message: Message):
         if not order:
             logging.error(f"Order {order_id} not found for successful payment")
             await message.answer(TEXT["order_not_found"].format(order_id=order_id))
+            return
+        
+        # Check if order is already processed
+        if order.status != OrderStatus.PENDING:
+            logging.warning(f"Order {order_id} already processed with status {order.status}")
+            await message.answer(f"Заказ #{order_id} уже был обработан ранее.")
             return
         
         # Update order status to PAID
@@ -2411,6 +2464,36 @@ async def cmd_analytics(message: Message):
     except Exception as e:
         logging.error(f"Error generating analytics: {e}")
         await message.answer(f"❌ Произошла ошибка при создании аналитики: {e}", reply_markup=get_main_keyboard())
+
+
+@dp.message(Command("cancel"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="cancel_command")
+async def cmd_cancel(message: Message, state: FSMContext):
+    """Handler to cancel any ongoing process"""
+    current_state = await state.get_state()
+    
+    if current_state is None:
+        await message.answer("Нет активного процесса для отмены.", reply_markup=get_main_keyboard())
+        return
+    
+    # Clear the state
+    await state.clear()
+    
+    # Determine what was being cancelled
+    if current_state.startswith("MealCreation"):
+        await message.answer("Создание блюда отменено.", reply_markup=get_main_keyboard())
+    elif current_state.startswith("VendorRegistration"):
+        await message.answer("Регистрация поставщика отменена.", reply_markup=get_main_keyboard())
+    elif current_state.startswith("MealsNearbySearch"):
+        await message.answer("Поиск блюд поблизости отменен.", reply_markup=get_main_keyboard())
+    else:
+        await message.answer("Процесс отменен.", reply_markup=get_main_keyboard())
+
+
+@dp.message(lambda message: message.text and message.text.lower() in ["отмена", "отменить", "cancel"])
+async def handle_cancel_text(message: Message, state: FSMContext):
+    """Handler for cancel text messages"""
+    await cmd_cancel(message, state)
 
 
 if __name__ == "__main__":

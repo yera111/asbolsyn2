@@ -160,6 +160,7 @@ The meal creation process is implemented using aiogram's Finite State Machine:
    - Vendor sends `/add_meal` command
    - System checks if user is a registered and approved vendor
    - If yes, starts the meal creation process by setting state to `MealCreation.waiting_for_name`
+   - System informs user about cancellation options (`/cancel` command or text-based cancellation)
 
 2. **Basic Information Collection**
    - System collects meal name (state: `MealCreation.waiting_for_name`)
@@ -180,6 +181,12 @@ The meal creation process is implemented using aiogram's Finite State Machine:
    - System creates a new Meal record with collected information
    - System associates the meal with the vendor
    - System confirms successful creation to the vendor
+
+6. **Cancellation Support**
+   - Users can cancel meal creation at any stage using `/cancel` command
+   - Text-based cancellation is supported (users can type "отмена", "отменить", or "cancel")
+   - System clears the current state and returns user to main menu
+   - Cancellation is available during any step of the meal creation process
 
 ## Meal Management
 
@@ -358,6 +365,44 @@ The payment integration is implemented using a flexible gateway approach:
      - Pre-checkout validation failures
    - Provides clear error messages to users
    - Logs detailed error information for debugging
+
+8. **Enhanced Payment Validation (Telegram Method)**
+   - **Pre-checkout Validation**:
+     - Validates payload format and order ID extraction
+     - Checks order existence and pending status
+     - Verifies meal availability and sufficient quantity
+     - Validates pickup time hasn't expired
+     - Provides specific error messages for each failure scenario
+   - **Successful Payment Processing**:
+     - Validates payment payload format
+     - Prevents duplicate payment processing
+     - Handles missing meal or vendor information gracefully
+     - Provides comprehensive error recovery and user feedback
+     - Includes detailed logging for debugging payment issues
+
+## Process Cancellation System
+
+The application includes a comprehensive cancellation system that allows users to exit multi-step processes:
+
+1. **Cancellation Commands**
+   - `/cancel` command works during any FSM state
+   - Text-based cancellation supports "отмена", "отменить", and "cancel"
+   - Cancellation is available for all multi-step processes:
+     - Meal creation (`MealCreation` states)
+     - Vendor registration (`VendorRegistration` states)
+     - Nearby meals search (`MealsNearbySearch` states)
+
+2. **Cancellation Behavior**
+   - System detects current state and provides appropriate cancellation message
+   - State is completely cleared to prevent data leakage
+   - User is returned to main menu with keyboard
+   - Process-specific cancellation messages inform user what was cancelled
+
+3. **User Experience**
+   - Cancellation instructions are provided at the start of multi-step processes
+   - Users can cancel at any stage without losing their place in the application
+   - Clear feedback confirms what process was cancelled
+   - Immediate return to main functionality after cancellation
 
 ## Database Migration System
 
