@@ -1787,6 +1787,7 @@ async def cmd_metrics(message: Message):
         # Format the dashboard data as a readable message
         overview = dashboard.get("overview", {})
         
+        # Build complete metrics message with everything consolidated
         metrics_text = (
             "📊 ПАНЕЛЬ МЕТРИК\n"
             "━" * 25 + "\n\n"
@@ -1823,16 +1824,16 @@ async def cmd_metrics(message: Message):
         avg_order_value = overview.get('gmv_total', 0) / overview.get('paid_orders', 1) if overview.get('paid_orders', 0) > 0 else 0
         metrics_text += f"📊 Средний чек: {round(avg_order_value, 2)} тг\n\n"
         
-        # Send the formatted metrics message
-        await message.answer(metrics_text)
-        
-        # Send a simple usage note instead of automatic detailed reports
-        usage_note = (
-            "💡 Для детальных отчетов используйте:\n"
+        # Add usage instructions to the same message
+        metrics_text += (
+            "━" * 25 + "\n"
+            "💡 ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ:\n"
             "/metrics_detailed [дни] - детальный отчет\n"
             "/analytics - расширенная аналитика"
         )
-        await message.answer(usage_note)
+        
+        # Send single consolidated message
+        await message.answer(metrics_text)
         
     except Exception as e:
         logging.error(f"Error generating metrics: {e}")

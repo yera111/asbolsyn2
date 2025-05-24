@@ -784,6 +784,11 @@ The metrics enhancement project has been **successfully completed** with the fol
     - All new orders now display "⚠️ Заказ будет автоматически отменен через 30 минут, если оплата не будет завершена."
     - Clear expectations set for users about order expiration timelines
     - Helps users understand the urgency of completing payment
+  - **Fixed Metrics Command Title Spam**: Resolved critical bug where `/metrics` command was sending multiple messages with repeated "ПАНЕЛЬ МЕТРИК" titles:
+    - Consolidated metrics dashboard and usage instructions into a single message
+    - Removed the second message that was causing the title repetition
+    - Improved user experience by delivering all metrics information in one clean, organized message
+    - Added visual separator between metrics data and command instructions
 
 ### Key Technical Improvements:
 - **Order Duplication Prevention**: Database-level checks prevent multiple pending orders for the same meal from the same user
