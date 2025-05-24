@@ -992,6 +992,21 @@ async def process_buy_callback(callback_query: CallbackQuery):
     # Get the consumer
     consumer = await Consumer.filter(telegram_id=user_id).first()
     
+    # Check for existing pending orders for this meal from this user
+    existing_order = await Order.filter(
+        consumer=consumer,
+        meal=meal,
+        status=OrderStatus.PENDING
+    ).first()
+    
+    if existing_order:
+        # User already has a pending order for this meal
+        await callback_query.answer(
+            f"У вас уже есть неоплаченный заказ #{existing_order.id} на это блюдо. "
+            f"Пожалуйста, завершите оплату или дождитесь истечения времени заказа."
+        )
+        return
+    
     # Create order
     order = await Order.create(
         consumer=consumer,
@@ -1018,6 +1033,12 @@ async def process_buy_callback(callback_query: CallbackQuery):
     
     # Calculate total price
     total_price = meal.price * count
+    
+    # Disable the buy button by editing the message to remove it
+    try:
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+    except Exception as e:
+        logging.warning(f"Could not remove buy button: {e}")
     
     # Check if Telegram payments are available
     if payment_gateway.is_telegram_payments_available():
@@ -1058,18 +1079,18 @@ async def process_buy_callback(callback_query: CallbackQuery):
                 protect_content=True
             )
             
-            # Send information message
+            # Send information message with order expiration warning
             await callback_query.message.answer(
                 TEXT["order_created"].format(
                     order_id=order.id,
                     meal_name=meal.name,
                     quantity=count,
                     price=total_price
-                )
+                ) + "\n\n⚠️ Заказ будет автоматически отменен через 30 минут, если оплата не будет завершена."
             )
             
             # Answer the callback query
-            await callback_query.answer()
+            await callback_query.answer("Заказ создан! Проверьте оплату выше.")
             
         except Exception as e:
             logging.error(f"Error sending invoice: {e}")
@@ -1096,19 +1117,19 @@ async def process_buy_callback(callback_query: CallbackQuery):
             ]
         )
         
-        # Send order confirmation message
+        # Send order confirmation message with expiration warning
         await callback_query.message.answer(
             TEXT["order_created"].format(
                 order_id=order.id,
                 meal_name=meal.name,
                 quantity=order.quantity,
                 price=total_price
-            ),
+            ) + "\n\n⚠️ Заказ будет автоматически отменен через 30 минут, если оплата не будет завершена.",
             reply_markup=keyboard
         )
         
         # Answer the callback query
-        await callback_query.answer()
+        await callback_query.answer("Заказ создан! Перейдите по ссылке для оплаты.")
         
         # For demo/testing purposes, simulate a payment webhook after 10 seconds
         # This would be replaced by an actual payment provider webhook in production
@@ -2027,6 +2048,10 @@ async def periodic_task_runner():
         try:
             # Run task to deactivate expired meals
             await scheduled_tasks["deactivate_expired_meals"]()
+            
+            # Run task to cleanup expired orders
+            await scheduled_tasks["cleanup_expired_orders"]()
+            
             # Wait for 10 minutes before checking again
             await asyncio.sleep(600)
         except Exception as e:

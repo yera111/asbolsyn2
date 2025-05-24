@@ -762,3 +762,54 @@ The metrics enhancement project has been **successfully completed** with the fol
 - Monitor payment success rates to ensure the improved error handling is working effectively
 - Gather user feedback on the new cancellation feature
 - Consider adding cancellation options to other multi-step processes if needed
+
+### Step 15.2: Duplicate Order Prevention and Order Management Improvements ✅
+- **Completed on:** January 17, 2025
+- **Status:** Completed
+- **Summary:**
+  - **Fixed Duplicate Order Creation Bug**: Resolved critical issue where users could spam the "Купить" button and create multiple pending orders for the same meal:
+    - Added validation to check for existing pending orders before creating new ones
+    - Users now receive a clear error message if they already have a pending order for the same meal
+    - Prevents accumulation of unwanted duplicate orders and confusion for both users and vendors
+  - **Enhanced Buy Button UX**: Improved user experience during the purchase flow:
+    - Buy button is automatically disabled/removed after clicking to prevent accidental multiple clicks
+    - Added clear feedback messages when order is created ("Заказ создан! Проверьте оплату выше.")
+    - Enhanced order creation messages with automatic cancellation warnings (30-minute timeout)
+  - **Implemented Automated Order Cleanup**: Added system to automatically manage expired orders:
+    - Created `cleanup_expired_orders()` task that runs every 10 minutes
+    - Automatically cancels orders that remain in PENDING status for more than 30 minutes
+    - Prevents accumulation of stale orders and maintains clean order data
+    - Integrated with existing periodic task runner for seamless background operation
+  - **Order Expiration User Warnings**: Added proactive user communication:
+    - All new orders now display "⚠️ Заказ будет автоматически отменен через 30 минут, если оплата не будет завершена."
+    - Clear expectations set for users about order expiration timelines
+    - Helps users understand the urgency of completing payment
+
+### Key Technical Improvements:
+- **Order Duplication Prevention**: Database-level checks prevent multiple pending orders for the same meal from the same user
+- **Button State Management**: Smart UI updates that disable interaction elements after use to prevent user errors
+- **Automated Data Hygiene**: Background tasks ensure the system stays clean without manual intervention
+- **User Communication**: Proactive messaging keeps users informed about system behavior and timelines
+
+### User Experience Enhancements:
+- **Clearer Purchase Flow**: Users can no longer accidentally create multiple orders, reducing confusion
+- **Better Feedback**: Immediate visual and textual feedback when actions are completed
+- **Expectation Management**: Clear warnings about order expiration help users plan their payment timing
+- **System Reliability**: Automatic cleanup ensures the system doesn't get clogged with old orders
+
+### Technical Implementation:
+- **Order Validation Logic**: Added comprehensive checks in `process_buy_callback()` function
+- **UI State Management**: Implemented button removal/disabling using `edit_reply_markup()`
+- **Background Task Enhancement**: Extended `tasks.py` with `cleanup_expired_orders()` function
+- **Periodic Processing**: Updated `periodic_task_runner()` to include order cleanup every 10 minutes
+- **Logging Integration**: Added detailed logging for order creation conflicts and cleanup activities
+
+### Bug Fixes Addressed:
+1. **Duplicate Order Spam**: Users can no longer create multiple pending orders for the same meal
+2. **Button State Issues**: Buy buttons are properly disabled after use to prevent accidental clicks
+3. **Order Accumulation**: Old pending orders are automatically cleaned up to maintain system performance
+
+### Next Steps:
+- Monitor order cleanup effectiveness and adjust timeout periods if needed
+- Consider adding user notifications when orders are auto-cancelled
+- Evaluate adding order limits per user per time period if abuse continues

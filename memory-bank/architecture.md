@@ -254,19 +254,32 @@ The consumer functionality is implemented with the following features:
    - System calculates and displays total price based on selected portions
    - System provides a "Buy" button for final purchase confirmation
 
-4. **Payment & Order Process**
+4. **Payment & Order Process with Duplicate Prevention**
    - Consumer clicks "Buy" button after selecting portions
    - System validates meal availability and portion quantity
-   - System creates a new Order record with status "pending"
+   - **Duplicate Order Check**: System checks for existing pending orders from the same user for the same meal
+     - If pending order exists, displays error message: "У вас уже есть неоплаченный заказ #X на это блюдо"
+     - Prevents creation of duplicate orders and user confusion
+     - User must complete or wait for expiration of existing order before creating a new one
+   - System creates a new Order record with status "pending" only if no duplicates exist
+   - **Button State Management**: System immediately disables/removes the "Buy" button to prevent accidental multiple clicks
    - System calls the payment gateway to create a payment
    - System displays payment link to user via inline button
+   - **Order Expiration Warning**: System informs user that order will be auto-cancelled in 30 minutes if not paid
    - User completes payment through the payment gateway
    - Payment gateway sends a webhook notification upon completion
    - System processes the webhook and updates order status to "paid"
    - System decreases the meal's available quantity
    - System sends confirmation notifications to both consumer and vendor
 
-5. **Order Tracking**
+5. **Automated Order Management**
+   - **Order Cleanup Task**: Background task runs every 10 minutes to clean up expired orders
+   - Orders in PENDING status for more than 30 minutes are automatically cancelled
+   - Prevents accumulation of stale orders and maintains system performance
+   - Automatic cleanup ensures meal quantities aren't artificially reserved by abandoned orders
+   - Task logging provides audit trail for cancelled orders
+
+6. **Order Tracking**
    - Consumer can view their order history using `/my_orders` command or the "My Orders" button
    - System displays a list of all orders with their status and details
    - Each order shows:
@@ -276,7 +289,7 @@ The consumer functionality is implemented with the following features:
      - Order status (Pending, Paid, Completed, Cancelled)
      - Order date/time
 
-6. **Order Management**
+7. **Order Management**
    - **Order Cancellation**:
      - Admin can cancel stuck orders with the `/cancel_order <id>` command
      - System validates admin credentials before allowing cancellation
