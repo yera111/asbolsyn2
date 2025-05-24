@@ -16,6 +16,13 @@ class OrderStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class PayoutStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class MetricType(str, Enum):
     USER_REGISTRATION = "user_registration"
     VENDOR_REGISTRATION = "vendor_registration"
@@ -29,6 +36,9 @@ class MetricType(str, Enum):
     ORDER_COMPLETED = "order_completed"
     ORDER_CANCELLED = "order_cancelled"
     PORTION_SELECTION = "portion_selection"
+    EARNINGS_CALCULATED = "earnings_calculated"
+    PAYOUT_REQUESTED = "payout_requested"
+    PAYOUT_COMPLETED = "payout_completed"
 
 
 class Vendor(Model):
@@ -42,6 +52,8 @@ class Vendor(Model):
 
     # Relationships
     meals = fields.ReverseRelation["Meal"]
+    earnings = fields.ReverseRelation["VendorEarnings"]
+    payout_requests = fields.ReverseRelation["PayoutRequest"]
 
     class Meta:
         table = "vendors"
@@ -98,6 +110,74 @@ class Order(Model):
 
     class Meta:
         table = "orders"
+
+
+class Commission(Model):
+    """Commission model for tracking platform commission rates."""
+    id = fields.IntField(pk=True)
+    commission_rate = fields.DecimalField(max_digits=5, decimal_places=4, default=0.15)  # 15% default
+    effective_from = fields.DatetimeField()
+    effective_to = fields.DatetimeField(null=True)  # NULL means currently active
+    description = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "commissions"
+
+
+class VendorEarnings(Model):
+    """Vendor earnings tracking model."""
+    id = fields.IntField(pk=True)
+    vendor = fields.ForeignKeyField("models.Vendor", related_name="earnings")
+    order = fields.ForeignKeyField("models.Order", related_name="vendor_earnings")
+    
+    # Financial details
+    gross_amount = fields.DecimalField(max_digits=10, decimal_places=2)  # Total order amount
+    commission_rate = fields.DecimalField(max_digits=5, decimal_places=4)  # Commission rate at time of order
+    commission_amount = fields.DecimalField(max_digits=10, decimal_places=2)  # Platform commission
+    net_amount = fields.DecimalField(max_digits=10, decimal_places=2)  # Amount vendor receives
+    
+    # Tracking
+    created_at = fields.DatetimeField(auto_now_add=True)
+    period_year = fields.IntField()  # Year for easy filtering
+    period_month = fields.IntField()  # Month (1-12) for easy filtering
+    is_paid_out = fields.BooleanField(default=False)
+    paid_out_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "vendor_earnings"
+        indexes = [
+            ("vendor", "period_year", "period_month"),
+            ("is_paid_out",),
+        ]
+
+
+class PayoutRequest(Model):
+    """Payout request tracking for vendors."""
+    id = fields.IntField(pk=True)
+    vendor = fields.ForeignKeyField("models.Vendor", related_name="payout_requests")
+    
+    # Payout details
+    amount = fields.DecimalField(max_digits=10, decimal_places=2)
+    currency = fields.CharField(max_length=3, default="KZT")  # Kazakhstani tenge
+    status = fields.CharEnumField(PayoutStatus, default=PayoutStatus.PENDING)
+    
+    # Period covered
+    period_year = fields.IntField()
+    period_month = fields.IntField()
+    
+    # External processing
+    external_transaction_id = fields.CharField(max_length=255, null=True)  # ID from external payout system
+    external_notes = fields.TextField(null=True)  # Notes about external processing
+    
+    # Timestamps
+    created_at = fields.DatetimeField(auto_now_add=True)
+    processed_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "payout_requests"
+        unique_together = ("vendor", "period_year", "period_month")
 
 
 class Metric(Model):

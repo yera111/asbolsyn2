@@ -30,6 +30,7 @@ from .metrics import (
 )
 from .security import rate_limit
 from .payment import payment_gateway
+from src.earnings import calculate_and_record_earnings
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -93,7 +94,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/cancel - Отменить текущий процесс\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/cancel - Отменить текущий процесс\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)\n/vendor_earnings - Просмотреть доходы (только для поставщиков)\n/vendor_earnings_monthly год месяц - Доходы за определенный месяц (только для поставщиков)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -1640,6 +1641,11 @@ async def cmd_complete_order(message: Message):
         order.completed_at = get_current_almaty_time()
         await order.save()
         
+        # Calculate and record vendor earnings
+        earnings = await calculate_and_record_earnings(order)
+        if earnings:
+            logging.info(f"Recorded earnings for vendor {vendor.name}: {earnings.net_amount} KZT")
+        
         # Track order completion metric
         await track_metric(
             metric_type=MetricType.ORDER_COMPLETED,
@@ -2032,6 +2038,10 @@ async def main():
     """Main function to run the bot in simple polling mode"""
     # Initialize database connection
     await init_db()
+    
+    # Initialize commission structure
+    from src.earnings import initialize_commission_structure
+    await initialize_commission_structure()
     
     try:
         # Create background task for deactivating expired meals
@@ -2520,6 +2530,350 @@ async def cmd_cancel(message: Message, state: FSMContext):
 async def handle_cancel_text(message: Message, state: FSMContext):
     """Handler for cancel text messages"""
     await cmd_cancel(message, state)
+
+
+# ---------------------------------------------------------------------------
+# /vendor_earnings – vendor can view their earnings summary
+# ---------------------------------------------------------------------------
+@dp.message(Command("vendor_earnings"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="vendor_earnings_command")
+async def cmd_vendor_earnings(message: Message):
+    """Handler for vendors to view their earnings"""
+    user_id = message.from_user.id
+    
+    # Check if sender is a vendor
+    vendor = await Vendor.filter(telegram_id=user_id).first()
+    if not vendor:
+        await message.answer("Эта команда доступна только для зарегистрированных поставщиков.", reply_markup=get_main_keyboard())
+        return
+    
+    # Check if vendor is approved
+    if vendor.status != VendorStatus.APPROVED:
+        await message.answer("Ваша заявка еще не была одобрена администратором.", reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        from src.earnings import get_vendor_unpaid_earnings
+        
+        # Get unpaid earnings
+        unpaid_summary = await get_vendor_unpaid_earnings(vendor)
+        
+        if unpaid_summary.get("total_unpaid", 0) <= 0:
+            await message.answer(
+                "💰 Ваши доходы:\n\n"
+                "На данный момент у вас нет неоплаченных доходов.\n"
+                "Ваши доходы начисляются после выполнения заказов.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Format earnings message
+        earnings_text = f"💰 Ваши доходы:\n\n"
+        earnings_text += f"💵 Общая сумма к выплате: {unpaid_summary['total_unpaid']} тенге\n\n"
+        
+        if unpaid_summary.get('periods'):
+            earnings_text += "📅 По периодам:\n"
+            for period in unpaid_summary['periods']:
+                earnings_text += f"• {period['year']}-{period['month']:02d}: {period['total_net']} тенге ({period['orders']} заказов)\n"
+        
+        earnings_text += "\n💡 Выплаты производятся в конце каждого месяца."
+        
+        await message.answer(earnings_text, reply_markup=get_main_keyboard())
+        
+    except Exception as e:
+        logging.error(f"Error viewing vendor earnings: {e}")
+        await message.answer("Произошла ошибка при получении информации о доходах.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /vendor_earnings_monthly – vendor can view earnings for specific month
+# ---------------------------------------------------------------------------
+@dp.message(Command("vendor_earnings_monthly"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="vendor_earnings_monthly_command")
+async def cmd_vendor_earnings_monthly(message: Message):
+    """Handler for vendors to view earnings for a specific month"""
+    user_id = message.from_user.id
+    
+    # Check if sender is a vendor
+    vendor = await Vendor.filter(telegram_id=user_id).first()
+    if not vendor:
+        await message.answer("Эта команда доступна только для зарегистрированных поставщиков.", reply_markup=get_main_keyboard())
+        return
+    
+    # Check if vendor is approved
+    if vendor.status != VendorStatus.APPROVED:
+        await message.answer("Ваша заявка еще не была одобрена администратором.", reply_markup=get_main_keyboard())
+        return
+    
+    # Parse year and month from command
+    args = message.text.split()
+    if len(args) < 3:
+        current_time = get_current_almaty_time()
+        await message.answer(
+            "Используйте формат: /vendor_earnings_monthly <год> <месяц>\n"
+            f"Например: /vendor_earnings_monthly {current_time.year} {current_time.month}",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    try:
+        year = int(args[1])
+        month = int(args[2])
+        
+        if month < 1 or month > 12:
+            await message.answer("Месяц должен быть от 1 до 12.", reply_markup=get_main_keyboard())
+            return
+        
+        from src.earnings import get_vendor_monthly_earnings
+        
+        # Get monthly earnings
+        monthly_summary = await get_vendor_monthly_earnings(vendor, year, month)
+        
+        if monthly_summary.get("total_orders", 0) <= 0:
+            await message.answer(
+                f"💰 Доходы за {year}-{month:02d}:\n\n"
+                "В этом месяце у вас не было завершенных заказов.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Format earnings message
+        earnings_text = f"💰 Доходы за {monthly_summary['period']}:\n\n"
+        earnings_text += f"📦 Заказов выполнено: {monthly_summary['total_orders']}\n"
+        earnings_text += f"💴 Общая сумма продаж: {monthly_summary['total_gross']} тенге\n"
+        earnings_text += f"📊 Комиссия платформы: {monthly_summary['total_commission']} тенге\n"
+        earnings_text += f"💵 Ваш доход: {monthly_summary['total_net']} тенге\n"
+        
+        if monthly_summary['is_paid_out']:
+            earnings_text += f"\n✅ Выплачено"
+        else:
+            earnings_text += f"\n⏳ Ожидает выплаты"
+        
+        await message.answer(earnings_text, reply_markup=get_main_keyboard())
+        
+    except ValueError:
+        await message.answer("Неверный формат года или месяца. Используйте числа.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error viewing vendor monthly earnings: {e}")
+        await message.answer("Произошла ошибка при получении информации о доходах.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /admin_payouts – admin can view pending payouts
+# ---------------------------------------------------------------------------
+@dp.message(Command("admin_payouts"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="admin_payouts_command")
+async def cmd_admin_payouts(message: Message):
+    """Handler for admin to view pending payouts"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        from src.earnings import get_pending_payouts
+        
+        # Get pending payouts
+        pending_payouts = await get_pending_payouts()
+        
+        if not pending_payouts:
+            await message.answer(
+                "💰 Ожидающие выплаты:\n\n"
+                "На данный момент нет ожидающих выплат.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Format payouts message
+        payouts_text = "💰 Ожидающие выплаты:\n\n"
+        
+        total_amount = 0
+        for payout in pending_payouts:
+            payouts_text += (
+                f"ID: {payout['id']}\n"
+                f"Поставщик: {payout['vendor_name']} (ID: {payout['vendor_telegram_id']})\n"
+                f"Период: {payout['period']}\n"
+                f"Сумма: {payout['amount']} {payout['currency']}\n"
+                f"Создан: {payout['created_at'][:10]}\n\n"
+            )
+            total_amount += float(payout['amount'])
+        
+        payouts_text += f"💵 Общая сумма к выплате: {total_amount:.2f} тенге\n\n"
+        payouts_text += "Для обработки выплаты используйте:\n/mark_payout_paid <vendor_id> <year> <month> [transaction_id]"
+        
+        await message.answer(payouts_text, reply_markup=get_main_keyboard())
+        
+    except Exception as e:
+        logging.error(f"Error viewing admin payouts: {e}")
+        await message.answer("Произошла ошибка при получении информации о выплатах.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /mark_payout_paid – admin marks payout as completed
+# ---------------------------------------------------------------------------
+@dp.message(Command("mark_payout_paid"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="mark_payout_paid_command")
+async def cmd_mark_payout_paid(message: Message):
+    """Handler for admin to mark payout as completed"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    # Parse arguments from command
+    args = message.text.split()
+    if len(args) < 4:
+        await message.answer(
+            "Используйте формат: /mark_payout_paid <vendor_telegram_id> <год> <месяц> [transaction_id]\n"
+            "Например: /mark_payout_paid 123456789 2024 11 TXN123456789",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    try:
+        vendor_telegram_id = int(args[1])
+        year = int(args[2])
+        month = int(args[3])
+        external_transaction_id = args[4] if len(args) > 4 else None
+        
+        if month < 1 or month > 12:
+            await message.answer("Месяц должен быть от 1 до 12.", reply_markup=get_main_keyboard())
+            return
+        
+        # Find vendor
+        vendor = await Vendor.filter(telegram_id=vendor_telegram_id).first()
+        if not vendor:
+            await message.answer(f"Поставщик с ID {vendor_telegram_id} не найден.", reply_markup=get_main_keyboard())
+            return
+        
+        from src.earnings import mark_earnings_as_paid
+        
+        # Mark earnings as paid
+        success = await mark_earnings_as_paid(vendor, year, month, external_transaction_id)
+        
+        if success:
+            success_msg = (
+                f"✅ Выплата успешно обработана!\n\n"
+                f"Поставщик: {vendor.name}\n"
+                f"Период: {year}-{month:02d}\n"
+            )
+            if external_transaction_id:
+                success_msg += f"ID транзакции: {external_transaction_id}\n"
+            
+            await message.answer(success_msg, reply_markup=get_main_keyboard())
+            
+            # Notify vendor
+            try:
+                from src.earnings import get_vendor_monthly_earnings
+                monthly_summary = await get_vendor_monthly_earnings(vendor, year, month)
+                
+                vendor_message = (
+                    f"💰 Выплата получена!\n\n"
+                    f"Период: {year}-{month:02d}\n"
+                    f"Сумма: {monthly_summary.get('total_net', 0)} тенге\n"
+                )
+                if external_transaction_id:
+                    vendor_message += f"ID транзакции: {external_transaction_id}\n"
+                vendor_message += "\nСпасибо за сотрудничество с As Bolsyn!"
+                
+                await bot.send_message(
+                    chat_id=vendor.telegram_id,
+                    text=vendor_message
+                )
+            except Exception as e:
+                logging.error(f"Error notifying vendor about payout: {e}")
+        else:
+            await message.answer(
+                f"❌ Не удалось обработать выплату. Возможно, выплата уже была обработана или нет данных для указанного периода.",
+                reply_markup=get_main_keyboard()
+            )
+        
+    except ValueError:
+        await message.answer("Неверный формат данных. Проверьте правильность ввода.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error marking payout as paid: {e}")
+        await message.answer("Произошла ошибка при обработке выплаты.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /generate_monthly_payouts – admin generates payout requests for all vendors
+# ---------------------------------------------------------------------------
+@dp.message(Command("generate_monthly_payouts"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="generate_monthly_payouts_command")
+async def cmd_generate_monthly_payouts(message: Message):
+    """Handler for admin to generate payout requests for the previous month"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    # Parse year and month from command or use previous month
+    args = message.text.split()
+    if len(args) >= 3:
+        try:
+            year = int(args[1])
+            month = int(args[2])
+        except ValueError:
+            await message.answer("Неверный формат года или месяца.", reply_markup=get_main_keyboard())
+            return
+    else:
+        # Use previous month
+        current_time = get_current_almaty_time()
+        if current_time.month == 1:
+            year = current_time.year - 1
+            month = 12
+        else:
+            year = current_time.year
+            month = current_time.month - 1
+    
+    if month < 1 or month > 12:
+        await message.answer("Месяц должен быть от 1 до 12.", reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        from src.earnings import create_monthly_payout_request
+        
+        # Get all approved vendors
+        vendors = await Vendor.filter(status=VendorStatus.APPROVED).all()
+        
+        created_payouts = []
+        total_amount = 0
+        
+        for vendor in vendors:
+            payout_request = await create_monthly_payout_request(vendor, year, month)
+            if payout_request:
+                created_payouts.append({
+                    'vendor_name': vendor.name,
+                    'amount': payout_request.amount
+                })
+                total_amount += float(payout_request.amount)
+        
+        if created_payouts:
+            payouts_text = f"💰 Создано запросов на выплату за {year}-{month:02d}:\n\n"
+            
+            for payout in created_payouts:
+                payouts_text += f"• {payout['vendor_name']}: {payout['amount']} тенге\n"
+            
+            payouts_text += f"\n💵 Общая сумма: {total_amount:.2f} тенге\n"
+            payouts_text += f"📦 Поставщиков: {len(created_payouts)}\n\n"
+            payouts_text += "Используйте /admin_payouts для просмотра всех ожидающих выплат."
+            
+            await message.answer(payouts_text, reply_markup=get_main_keyboard())
+        else:
+            await message.answer(
+                f"За период {year}-{month:02d} не найдено доходов для создания выплат.",
+                reply_markup=get_main_keyboard()
+            )
+        
+    except Exception as e:
+        logging.error(f"Error generating monthly payouts: {e}")
+        await message.answer("Произошла ошибка при создании запросов на выплату.", reply_markup=get_main_keyboard())
 
 
 if __name__ == "__main__":
