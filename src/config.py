@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 import pytz
 import urllib.parse
+import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -60,6 +61,10 @@ DEFAULT_LANGUAGE = "ru"
 # Use a fixed UTC+5 timezone instead of relying on the named timezone
 TIMEZONE_OFFSET_HOURS = 5  # Almaty is UTC+5
 ALMATY_TIMEZONE = pytz.FixedOffset(TIMEZONE_OFFSET_HOURS * 60)  # Convert hours to minutes
+
+def get_current_almaty_time():
+    """Get current time in Almaty timezone"""
+    return datetime.datetime.now(ALMATY_TIMEZONE)
 
 # Payment Gateway configuration (for testing initially)
 PAYMENT_GATEWAY_ENABLED = os.getenv("PAYMENT_GATEWAY_ENABLED", "True").lower() in ["true", "1", "yes"]

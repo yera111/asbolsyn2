@@ -18,7 +18,8 @@ from typing import Dict
 from .config import (
     BOT_TOKEN, ADMIN_CHAT_ID, ALMATY_TIMEZONE, 
     RATE_LIMIT_GENERAL, RATE_LIMIT_REGISTER, RATE_LIMIT_ADD_MEAL, RATE_LIMIT_PAYMENT,
-    TELEGRAM_PAYMENT_PROVIDER_TOKEN, TELEGRAM_PAYMENT_CURRENCY, TELEGRAM_PAYMENT_ENABLED
+    TELEGRAM_PAYMENT_PROVIDER_TOKEN, TELEGRAM_PAYMENT_CURRENCY, TELEGRAM_PAYMENT_ENABLED,
+    get_current_almaty_time
 )
 from .db import init_db, close_db
 from .models import Consumer, Vendor, VendorStatus, Meal, Order, OrderStatus, Metric, MetricType
@@ -41,10 +42,6 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # Timezone utility functions
-def get_current_almaty_time():
-    """Get current time in Almaty timezone"""
-    return datetime.datetime.now(ALMATY_TIMEZONE)
-
 def to_almaty_time(dt):
     """Convert any datetime to Almaty timezone"""
     if dt.tzinfo is None:
