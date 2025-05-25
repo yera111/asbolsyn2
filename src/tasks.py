@@ -16,8 +16,22 @@ async def deactivate_expired_meals():
         # Get current time in Almaty timezone
         now = datetime.datetime.now(ALMATY_TIMEZONE)
         
-        # Find all active meals with pickup_end_time in the past
-        expired_meals = await Meal.filter(is_active=True, pickup_end_time__lt=now)
+        # Get all active meals and check them individually for proper timezone handling
+        active_meals = await Meal.filter(is_active=True)
+        
+        expired_meals = []
+        for meal in active_meals:
+            # Ensure pickup_end_time is timezone-aware and convert to Almaty timezone
+            if meal.pickup_end_time.tzinfo is None:
+                # If naive datetime, assume it's in Almaty timezone
+                pickup_end_time = meal.pickup_end_time.replace(tzinfo=ALMATY_TIMEZONE)
+            else:
+                # Convert to Almaty timezone
+                pickup_end_time = meal.pickup_end_time.astimezone(ALMATY_TIMEZONE)
+            
+            # Check if meal has expired
+            if pickup_end_time <= now:
+                expired_meals.append(meal)
         
         if expired_meals:
             count = len(expired_meals)

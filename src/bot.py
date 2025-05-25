@@ -91,7 +91,7 @@ async def save_order_with_timezone(order):
 # Russian text templates
 TEXT = {
     "welcome": "Добро пожаловать в As Bolsyn! Этот бот поможет вам найти и приобрести блюда от местных заведений по сниженным ценам.",
-    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/cancel - Отменить текущий процесс\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)\n/vendor_earnings - Просмотреть доходы (только для поставщиков)\n/vendor_earnings_monthly год месяц - Доходы за определенный месяц (только для поставщиков)",
+    "help": "Доступные команды:\n/start - Запустить бот\n/help - Показать эту справку\n/cancel - Отменить текущий процесс\n/register_vendor - Зарегистрироваться как поставщик\n/add_meal - Добавить блюдо (только для поставщиков)\n/my_meals - Просмотреть мои блюда (только для поставщиков)\n/browse_meals - Просмотреть доступные блюда\n/meals_nearby - Найти блюда поблизости\n/view_meal ID - Посмотреть детали блюда\n/my_orders - Просмотреть мои заказы\n/vendor_orders - Просмотреть заказы на мои блюда (только для поставщиков)\n/complete_order ID - Подтвердить выдачу заказа (только для поставщиков)\n/vendor_earnings - Просмотреть доходы (только для поставщиков)\n/vendor_earnings_monthly год месяц - Доходы за определенный месяц (только для поставщиков)\n/recalculate_earnings - Пересчитать доходы (только для администратора)",
     "vendor_register_start": "Начинаем процесс регистрации поставщика. Пожалуйста, укажите название вашего заведения:",
     "vendor_ask_phone": "Спасибо! Теперь укажите контактный телефон:",
     "vendor_registered": "Ваша заявка на регистрацию поставщика отправлена на рассмотрение. Мы свяжемся с вами в ближайшее время.",
@@ -780,31 +780,30 @@ async def cmd_browse_meals(message: Message):
         user_id=user_id
     )
     
-    # Get all active meals with quantity > 0
-    # Use the current time in Almaty timezone for filtering
+    # Get current time in Almaty timezone for filtering
     current_time = get_current_almaty_time()
     logging.info(f"Current Almaty time for meal filtering: {current_time}")
     
-    # Get all meals first, then filter in memory to ensure proper timezone handling
+    # Get all meals that are active and have quantity > 0
     all_meals = await Meal.filter(is_active=True, quantity__gt=0).prefetch_related('vendor').order_by('-created_at')
     
-    # Filter meals in memory to ensure proper timezone handling
+    # Filter meals to exclude expired ones (pickup_end_time has passed)
     meals = []
     for meal in all_meals:
-        # Ensure end time is timezone-aware and explicitly convert to Almaty timezone
-        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
-        current_almaty = get_current_almaty_time()
+        # Ensure pickup_end_time is timezone-aware and convert to Almaty timezone
+        if meal.pickup_end_time.tzinfo is None:
+            # If naive datetime, assume it's in Almaty timezone
+            pickup_end_time = meal.pickup_end_time.replace(tzinfo=ALMATY_TIMEZONE)
+        else:
+            # Convert to Almaty timezone
+            pickup_end_time = meal.pickup_end_time.astimezone(ALMATY_TIMEZONE)
         
-        # Debug output with explicit timezone info
-        logging.info(f"Meal '{meal.name}' end time: {pickup_end_time} ({pickup_end_time.tzinfo})")
-        logging.info(f"Current time: {current_almaty} ({current_almaty.tzinfo})")
-        logging.info(f"Comparing {pickup_end_time} > {current_almaty}: {pickup_end_time > current_almaty}")
-        
-        if pickup_end_time > current_almaty:
+        # Compare with current Almaty time
+        if pickup_end_time > current_time:
             meals.append(meal)
             logging.info(f"Including meal: {meal.name}, end time: {pickup_end_time}")
         else:
-            logging.info(f"Excluding meal: {meal.name}, end time: {pickup_end_time} (already passed)")
+            logging.info(f"Excluding expired meal: {meal.name}, end time: {pickup_end_time} (current: {current_time})")
     
     if not meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
@@ -859,10 +858,15 @@ async def callback_view_meal(callback_query: CallbackQuery):
         return
     
     # Check if meal is expired using proper timezone comparison
-    pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
-    current_almaty = get_current_almaty_time()
+    current_time = get_current_almaty_time()
+    if meal.pickup_end_time.tzinfo is None:
+        # If naive datetime, assume it's in Almaty timezone
+        pickup_end_time = meal.pickup_end_time.replace(tzinfo=ALMATY_TIMEZONE)
+    else:
+        # Convert to Almaty timezone
+        pickup_end_time = meal.pickup_end_time.astimezone(ALMATY_TIMEZONE)
     
-    if pickup_end_time <= current_almaty:
+    if pickup_end_time <= current_time:
         await callback_query.answer("К сожалению, время самовывоза для этого блюда уже истекло.")
         return
     
@@ -1241,20 +1245,20 @@ async def process_meals_nearby(message: Message, state: FSMContext):
     # Filter meals in memory based on pickup time
     valid_meals = []
     for meal in all_meals:
-        # Ensure end time is timezone-aware and explicitly convert to Almaty timezone
-        pickup_end_time = to_almaty_time(ensure_timezone_aware(meal.pickup_end_time))
-        current_almaty = get_current_almaty_time()
+        # Ensure pickup_end_time is timezone-aware and convert to Almaty timezone
+        if meal.pickup_end_time.tzinfo is None:
+            # If naive datetime, assume it's in Almaty timezone
+            pickup_end_time = meal.pickup_end_time.replace(tzinfo=ALMATY_TIMEZONE)
+        else:
+            # Convert to Almaty timezone
+            pickup_end_time = meal.pickup_end_time.astimezone(ALMATY_TIMEZONE)
         
-        # Debug output with explicit timezone info
-        logging.info(f"Nearby meal '{meal.name}' end time: {pickup_end_time} ({pickup_end_time.tzinfo})")
-        logging.info(f"Current time: {current_almaty} ({current_almaty.tzinfo})")
-        logging.info(f"Comparing {pickup_end_time} > {current_almaty}: {pickup_end_time > current_almaty}")
-        
-        if pickup_end_time > current_almaty:
+        # Compare with current Almaty time
+        if pickup_end_time > current_time:
             valid_meals.append(meal)
             logging.info(f"Including nearby meal: {meal.name}, end time: {pickup_end_time}")
         else:
-            logging.info(f"Excluding nearby meal: {meal.name}, end time: {pickup_end_time} (already passed)")
+            logging.info(f"Excluding nearby meal: {meal.name}, end time: {pickup_end_time} (current: {current_time})")
     
     if not valid_meals:
         await message.answer(TEXT["browse_meals_empty"], reply_markup=get_main_keyboard())
@@ -2551,17 +2555,40 @@ async def cmd_vendor_earnings(message: Message):
     
     try:
         from src.earnings import get_vendor_unpaid_earnings
+        from src.models import VendorEarnings, Order, OrderStatus
+        
+        # Debug: Check all earnings for this vendor
+        all_earnings = await VendorEarnings.filter(vendor=vendor).prefetch_related('order').all()
+        completed_orders = await Order.filter(meal__vendor=vendor, status=OrderStatus.COMPLETED).all()
+        
+        logging.info(f"Debug earnings for vendor {vendor.name} (ID: {vendor.id}):")
+        logging.info(f"  Total earnings records: {len(all_earnings)}")
+        logging.info(f"  Completed orders: {len(completed_orders)}")
+        
+        for earning in all_earnings:
+            logging.info(f"  Earning: Order {earning.order.id}, Net: {earning.net_amount}, Paid out: {earning.is_paid_out}")
         
         # Get unpaid earnings
         unpaid_summary = await get_vendor_unpaid_earnings(vendor)
         
+        logging.info(f"  Unpaid summary: {unpaid_summary}")
+        
         if unpaid_summary.get("total_unpaid", 0) <= 0:
-            await message.answer(
-                "💰 Ваши доходы:\n\n"
-                "На данный момент у вас нет неоплаченных доходов.\n"
-                "Ваши доходы начисляются после выполнения заказов.",
-                reply_markup=get_main_keyboard()
-            )
+            # Check if there are any earnings at all
+            if all_earnings:
+                await message.answer(
+                    "💰 Ваши доходы:\n\n"
+                    f"У вас есть {len(all_earnings)} записей о доходах, но все уже выплачены.\n"
+                    "Ваши доходы начисляются после выполнения заказов.",
+                    reply_markup=get_main_keyboard()
+                )
+            else:
+                await message.answer(
+                    "💰 Ваши доходы:\n\n"
+                    "На данный момент у вас нет неоплаченных доходов.\n"
+                    "Ваши доходы начисляются после выполнения заказов.",
+                    reply_markup=get_main_keyboard()
+                )
             return
         
         # Format earnings message
@@ -2871,6 +2898,360 @@ async def cmd_generate_monthly_payouts(message: Message):
     except Exception as e:
         logging.error(f"Error generating monthly payouts: {e}")
         await message.answer("Произошла ошибка при создании запросов на выплату.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /recalculate_earnings – admin command to fix missing earnings
+# ---------------------------------------------------------------------------
+@dp.message(Command("recalculate_earnings"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="recalculate_earnings_command")
+async def cmd_recalculate_earnings(message: Message):
+    """Handler for admin to recalculate missing earnings for completed orders"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        from src.earnings import calculate_and_record_earnings
+        from src.models import Order, OrderStatus, VendorEarnings
+        
+        # Find completed orders without earnings records
+        completed_orders = await Order.filter(status=OrderStatus.COMPLETED).prefetch_related('meal', 'meal__vendor').all()
+        
+        missing_earnings = []
+        for order in completed_orders:
+            # Check if earnings already exist
+            existing_earnings = await VendorEarnings.filter(order=order).first()
+            if not existing_earnings:
+                missing_earnings.append(order)
+        
+        if not missing_earnings:
+            await message.answer(
+                "✅ Все завершенные заказы уже имеют записи о доходах.\n"
+                f"Проверено заказов: {len(completed_orders)}",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Recalculate missing earnings
+        recalculated = 0
+        total_amount = 0
+        
+        for order in missing_earnings:
+            earnings = await calculate_and_record_earnings(order)
+            if earnings:
+                recalculated += 1
+                total_amount += float(earnings.net_amount)
+                logging.info(f"Recalculated earnings for order {order.id}: {earnings.net_amount} KZT")
+        
+        await message.answer(
+            f"✅ Пересчитаны доходы для {recalculated} заказов\n"
+            f"Общая сумма: {total_amount:.2f} тенге\n"
+            f"Найдено заказов без доходов: {len(missing_earnings)}",
+            reply_markup=get_main_keyboard()
+        )
+        
+    except Exception as e:
+        logging.error(f"Error recalculating earnings: {e}")
+        await message.answer("Произошла ошибка при пересчете доходов.", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /test_payment – admin command to simulate successful payment for testing
+# ---------------------------------------------------------------------------
+@dp.message(Command("test_payment"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="test_payment_command")
+async def cmd_test_payment(message: Message):
+    """Handler for admin to simulate successful payment for testing"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    # Parse order ID from command
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer(
+            "Используйте формат: /test_payment <order_id>\n"
+            "Например: /test_payment 123",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    try:
+        order_id = int(args[1])
+        
+        # Get the order
+        order = await Order.filter(id=order_id).prefetch_related('meal', 'consumer', 'meal__vendor').first()
+        
+        if not order:
+            await message.answer(f"Заказ #{order_id} не найден.", reply_markup=get_main_keyboard())
+            return
+        
+        # Check if order is in PENDING status
+        if order.status != OrderStatus.PENDING:
+            await message.answer(
+                f"Заказ #{order_id} имеет статус {order.status.value}. "
+                f"Тестовый платеж можно применить только к заказам со статусом PENDING.",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Simulate successful payment processing
+        await simulate_successful_test_payment(order)
+        
+        await message.answer(
+            f"✅ Тестовый платеж для заказа #{order_id} успешно обработан!\n\n"
+            f"Блюдо: {order.meal.name}\n"
+            f"Количество: {order.quantity} порций\n"
+            f"Сумма: {order.meal.price * order.quantity} тенге\n"
+            f"Покупатель: {order.consumer.telegram_id}\n"
+            f"Поставщик: {order.meal.vendor.name}",
+            reply_markup=get_main_keyboard()
+        )
+        
+    except ValueError:
+        await message.answer("Неверный формат ID заказа. Используйте число.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error processing test payment: {e}")
+        await message.answer(f"Произошла ошибка при обработке тестового платежа: {e}", reply_markup=get_main_keyboard())
+
+
+async def simulate_successful_test_payment(order: Order):
+    """
+    Simulate a successful payment for testing purposes.
+    This function mimics the behavior of process_successful_payment but for testing.
+    """
+    try:
+        # Update order status to PAID
+        order.status = OrderStatus.PAID
+        await order.save()
+        
+        # Get related models
+        meal = order.meal
+        vendor = meal.vendor
+        consumer = order.consumer
+        
+        # Update meal quantity
+        meal.quantity = max(0, meal.quantity - order.quantity)
+        await meal.save()
+        
+        # Track payment metric
+        await track_metric(
+            metric_type=MetricType.ORDER_PAID,
+            entity_id=order.id,
+            user_id=consumer.telegram_id,
+            value=float(order.quantity),
+            metadata={
+                "meal_id": meal.id,
+                "meal_name": meal.name,
+                "order_quantity": order.quantity,
+                "order_value": float(meal.price * order.quantity),
+                "payment_method": "test_simulation"
+            }
+        )
+        
+        # Format pickup times for notifications
+        pickup_start = format_pickup_time(meal.pickup_start_time)
+        pickup_end = format_pickup_time(meal.pickup_end_time)
+        
+        # Send order confirmation to consumer
+        consumer_message = TEXT["order_confirmed"].format(
+            order_id=order.id,
+            meal_name=meal.name,
+            quantity=order.quantity,
+            vendor_name=vendor.name,
+            address=meal.location_address,
+            pickup_start=pickup_start,
+            pickup_end=pickup_end
+        )
+        
+        await bot.send_message(
+            chat_id=consumer.telegram_id,
+            text=consumer_message + "\n\n🧪 Это тестовый платеж, обработанный администратором."
+        )
+        
+        # Send notification to vendor
+        vendor_message = TEXT["vendor_notification"].format(
+            order_id=order.id,
+            meal_name=meal.name,
+            quantity=order.quantity,
+            pickup_start=pickup_start,
+            pickup_end=pickup_end
+        )
+        
+        await bot.send_message(
+            chat_id=vendor.telegram_id,
+            text=vendor_message + "\n\n🧪 Это тестовый заказ, обработанный администратором."
+        )
+        
+        logging.info(f"Test payment simulation completed for order {order.id}")
+        
+    except Exception as e:
+        logging.error(f"Error in test payment simulation: {e}")
+        raise
+
+
+# ---------------------------------------------------------------------------
+# /test_create_order – admin command to create test order for testing
+# ---------------------------------------------------------------------------
+@dp.message(Command("test_create_order"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="test_create_order_command")
+async def cmd_test_create_order(message: Message):
+    """Handler for admin to create a test order for testing payment flow"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    # Parse arguments: meal_id, consumer_telegram_id, quantity
+    args = message.text.split()
+    if len(args) < 4:
+        await message.answer(
+            "Используйте формат: /test_create_order <meal_id> <consumer_telegram_id> <quantity>\n"
+            "Например: /test_create_order 1 123456789 2",
+            reply_markup=get_main_keyboard()
+        )
+        return
+    
+    try:
+        meal_id = int(args[1])
+        consumer_telegram_id = int(args[2])
+        quantity = int(args[3])
+        
+        if quantity <= 0:
+            await message.answer("Количество должно быть больше 0.", reply_markup=get_main_keyboard())
+            return
+        
+        # Get the meal
+        meal = await Meal.filter(id=meal_id, is_active=True).prefetch_related('vendor').first()
+        if not meal:
+            await message.answer(f"Активное блюдо с ID {meal_id} не найдено.", reply_markup=get_main_keyboard())
+            return
+        
+        # Check meal quantity
+        if meal.quantity < quantity:
+            await message.answer(
+                f"Недостаточно порций. Доступно: {meal.quantity}, запрошено: {quantity}",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Get or create consumer
+        consumer, created = await Consumer.get_or_create(telegram_id=consumer_telegram_id)
+        if created:
+            logging.info(f"Created test consumer with telegram_id: {consumer_telegram_id}")
+        
+        # Create test order
+        order = await Order.create(
+            consumer=consumer,
+            meal=meal,
+            status=OrderStatus.PENDING,
+            quantity=quantity
+        )
+        
+        # Track order creation metric
+        await track_metric(
+            metric_type=MetricType.ORDER_CREATED,
+            entity_id=order.id,
+            user_id=consumer_telegram_id,
+            value=float(quantity),
+            metadata={
+                "meal_id": meal.id,
+                "meal_name": meal.name,
+                "vendor_id": meal.vendor.id,
+                "vendor_name": meal.vendor.name,
+                "order_quantity": quantity,
+                "order_value": float(meal.price * quantity),
+                "test_order": True
+            }
+        )
+        
+        total_price = meal.price * quantity
+        
+        await message.answer(
+            f"✅ Тестовый заказ создан!\n\n"
+            f"ID заказа: {order.id}\n"
+            f"Блюдо: {meal.name}\n"
+            f"Количество: {quantity} порций\n"
+            f"Сумма: {total_price} тенге\n"
+            f"Покупатель: {consumer_telegram_id}\n"
+            f"Поставщик: {meal.vendor.name}\n\n"
+            f"Для симуляции оплаты используйте:\n"
+            f"/test_payment {order.id}",
+            reply_markup=get_main_keyboard()
+        )
+        
+    except ValueError:
+        await message.answer("Неверный формат данных. Используйте числа для всех параметров.", reply_markup=get_main_keyboard())
+    except Exception as e:
+        logging.error(f"Error creating test order: {e}")
+        await message.answer(f"Произошла ошибка при создании тестового заказа: {e}", reply_markup=get_main_keyboard())
+
+
+# ---------------------------------------------------------------------------
+# /test_orders – admin command to view pending orders for testing
+# ---------------------------------------------------------------------------
+@dp.message(Command("test_orders"))
+@rate_limit(limit=RATE_LIMIT_GENERAL, period=60, key="test_orders_command")
+async def cmd_test_orders(message: Message):
+    """Handler for admin to view pending orders for testing"""
+    user_id = message.from_user.id
+    
+    # Check if sender is admin
+    if str(user_id) != ADMIN_CHAT_ID:
+        await message.answer("У вас нет прав администратора для выполнения этой команды.", reply_markup=get_main_keyboard())
+        return
+    
+    try:
+        # Get all pending orders
+        pending_orders = await Order.filter(status=OrderStatus.PENDING).prefetch_related('meal', 'consumer', 'meal__vendor').order_by('-created_at')
+        
+        if not pending_orders:
+            await message.answer(
+                "📋 Нет заказов в статусе PENDING.\n\n"
+                "Для создания тестового заказа используйте:\n"
+                "/test_create_order <meal_id> <consumer_telegram_id> <quantity>",
+                reply_markup=get_main_keyboard()
+            )
+            return
+        
+        # Format orders list
+        orders_text = f"📋 Заказы в статусе PENDING ({len(pending_orders)}):\n\n"
+        
+        for order in pending_orders[:10]:  # Show max 10 orders
+            total_price = order.meal.price * order.quantity
+            orders_text += (
+                f"ID: {order.id}\n"
+                f"Блюдо: {order.meal.name}\n"
+                f"Количество: {order.quantity} порций\n"
+                f"Сумма: {total_price} тенге\n"
+                f"Покупатель: {order.consumer.telegram_id}\n"
+                f"Поставщик: {order.meal.vendor.name}\n"
+                f"Создан: {order.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            )
+        
+        if len(pending_orders) > 10:
+            orders_text += f"... и еще {len(pending_orders) - 10} заказов\n\n"
+        
+        orders_text += (
+            "💡 Команды для тестирования:\n"
+            "/test_payment <order_id> - симулировать оплату\n"
+            "/test_create_order <meal_id> <user_id> <qty> - создать заказ"
+        )
+        
+        await message.answer(orders_text, reply_markup=get_main_keyboard())
+        
+    except Exception as e:
+        logging.error(f"Error viewing test orders: {e}")
+        await message.answer("Произошла ошибка при получении списка заказов.", reply_markup=get_main_keyboard())
 
 
 if __name__ == "__main__":
