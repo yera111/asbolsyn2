@@ -58,19 +58,11 @@ async def init_db_with_retry(max_retries=5, retry_delay=5):
     """Initialize database connection with retry logic"""
     for attempt in range(max_retries):
         try:
-            logger.info(f"Initializing database (attempt {attempt + 1}/{max_retries}) with URL: {DB_URL}")
+            logger.info(f"Initializing database (attempt {attempt + 1}/{max_retries})")
             
-            # Add connection timeout and retry parameters to DB_URL
-            db_url = DB_URL
-            if "postgres://" in db_url and "?" not in db_url:
-                db_url += "?command_timeout=30&server_settings={}&retries=3"
-            elif "postgres://" in db_url:
-                db_url += "&command_timeout=30&retries=3"
-            
-            await Tortoise.init(
-                db_url=db_url,
-                modules={"models": ["src.models"]}
-            )
+            # Use TORTOISE_ORM config for proper connection handling
+            from .config import TORTOISE_ORM
+            await Tortoise.init(config=TORTOISE_ORM)
             
             # Tables will be created by Aerich migration or directly for testing
             if "sqlite" in DB_URL:  # For SQLite in-memory testing

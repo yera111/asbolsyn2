@@ -54,10 +54,9 @@ if TESTING:
     DB_URL = "sqlite://:memory:"
 else:
     # Add connection parameters for better Railway compatibility
+    # Note: server_settings should not be in URL, it's handled by Tortoise ORM config
     connection_params = {
         "command_timeout": "60",
-        "server_settings": "jit=off",
-        "retries": "3",
         "connection_timeout": "30",
         "pool_size": "10",
         "pool_timeout": "30",
@@ -98,7 +97,26 @@ TELEGRAM_PAYMENT_CURRENCY = os.getenv("TELEGRAM_PAYMENT_CURRENCY", "KGS")  # Kyr
 
 # Tortoise ORM Configuration for Aerich
 TORTOISE_ORM = {
-    "connections": {"default": DB_URL},
+    "connections": {
+        "default": {
+            "engine": "tortoise.backends.asyncpg",
+            "credentials": {
+                "host": DB_HOST,
+                "port": DB_PORT,
+                "user": DB_USER,
+                "password": DB_PASSWORD,
+                "database": DB_NAME,
+                "command_timeout": 60,
+                "connection_timeout": 30,
+                "pool_size": 10,
+                "pool_timeout": 30,
+                "pool_recycle": 300,
+                "server_settings": {
+                    "jit": "off"
+                }
+            }
+        } if not TESTING else DB_URL
+    },
     "apps": {
         "models": {
             "models": ["src.models", "aerich.models"],

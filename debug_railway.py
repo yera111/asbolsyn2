@@ -41,10 +41,8 @@ async def test_database_connection():
         
         # Test basic connection
         logger.info("Attempting to connect to database...")
-        await Tortoise.init(
-            db_url=DB_URL,
-            modules={"models": ["src.models"]}
-        )
+        from src.config import TORTOISE_ORM
+        await Tortoise.init(config=TORTOISE_ORM)
         
         # Test a simple query
         logger.info("Testing database query...")

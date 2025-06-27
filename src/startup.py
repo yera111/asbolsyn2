@@ -14,10 +14,8 @@ async def wait_for_database(max_attempts=30, delay=2):
             logger.info(f"Testing database connection (attempt {attempt + 1}/{max_attempts})")
             
             # Create a simple test connection
-            await Tortoise.init(
-                db_url=DB_URL,
-                modules={"models": ["src.models"]}
-            )
+            from .config import TORTOISE_ORM
+            await Tortoise.init(config=TORTOISE_ORM)
             await Tortoise.close_connections()
             
             logger.info("Database connection successful!")
