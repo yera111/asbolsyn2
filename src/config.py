@@ -48,11 +48,24 @@ ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "12345" if TESTING else None)
 # URL encode the password to handle special characters
 encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
 
-# Database URL for Tortoise ORM
-DB_URL = f"postgres://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Database URL for Tortoise ORM with connection parameters for Railway
 if TESTING:
     # Use SQLite in-memory for testing
     DB_URL = "sqlite://:memory:"
+else:
+    # Add connection parameters for better Railway compatibility
+    connection_params = {
+        "command_timeout": "60",
+        "server_settings": "jit=off",
+        "retries": "3",
+        "connection_timeout": "30",
+        "pool_size": "10",
+        "pool_timeout": "30",
+        "pool_recycle": "300"
+    }
+    
+    params_string = "&".join([f"{k}={v}" for k, v in connection_params.items()])
+    DB_URL = f"postgres://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?{params_string}"
 
 # Default language
 DEFAULT_LANGUAGE = "ru"
